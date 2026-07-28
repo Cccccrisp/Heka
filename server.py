@@ -11,9 +11,9 @@ from urllib.parse import urlparse
 
 from heka.db import HekaStore
 from heka.deepseek import answer_question, load_dotenv, propose_action_experiments
-from heka.local import analyse_record, guide_trace
+from heka.local import analyse_record, guide_trace, propose_initial_model
 from heka.obsidian import import_daily_records
-from heka.schema import apply_confirmed_proposal
+from heka.schema import apply_confirmed_proposal, apply_initial_model_seed
 
 
 ROOT = Path(__file__).resolve().parent
@@ -145,6 +145,28 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 if len(transcript) < 2:
                     raise ValueError("先写下一点真实发生的事，Heka 才能追问。")
                 self._json(HTTPStatus.OK, guide_trace(transcript))
+                return
+            if path == "/api/model/bootstrap":
+                store = self._store()
+                try:
+                    evidence = store.recent_evidence(12)
+                    if len(evidence) < 3:
+                        raise ValueError("至少需要 3 条 Trace，才能建立初始模型。")
+                    self._json(HTTPStatus.OK, {"seed": propose_initial_model(evidence), "source_count": len(evidence)})
+                finally:
+                    store.close()
+                return
+            if path == "/api/model/bootstrap/confirm":
+                seed = body.get("seed")
+                if not isinstance(seed, dict) or not isinstance(seed.get("dimensions"), list):
+                    raise ValueError("初始模型内容不完整。")
+                store = self._store()
+                try:
+                    model = apply_initial_model_seed(store.current_model(), seed)
+                    store.add_model_snapshot(model, None)
+                    self._json(HTTPStatus.OK, {"model": model, "message": "已将这周的模型起点写入本地版本历史。"})
+                finally:
+                    store.close()
                 return
             if path == "/api/ask":
                 question = str(body.get("question", "")).strip()

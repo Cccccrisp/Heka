@@ -195,3 +195,17 @@ def apply_confirmed_proposal(model: dict[str, Any], proposal: dict[str, Any]) ->
             "added_at": next_model["updated_at"],
         })
     return next_model
+
+
+def apply_initial_model_seed(model: dict[str, Any], seed: dict[str, Any]) -> dict[str, Any]:
+    """Write an explicitly user-confirmed baseline while preserving its evidence boundary."""
+    next_model = deepcopy(model)
+    next_model["version"] = int(next_model.get("version", 0)) + 1
+    next_model["updated_at"] = utc_now()
+    dimensions = next_model.setdefault("confirmed_dimensions", {})
+    for item in seed["dimensions"]:
+        dimensions[item["name"]] = {"value": item["value"], "confidence": item["confidence"], "scope": item["scope"], "evidence": item["evidence"], "confirmed_at": next_model["updated_at"]}
+    for item in seed.get("hypotheses", []):
+        next_model.setdefault("hypotheses", []).append({"statement": item["statement"], "confidence": min(0.7, max(0, float(item.get("confidence", 0.4)))), "evidence": item.get("evidence", []), "next_validation": item.get("next_validation", "收集新的可比较 Trace。"), "scope": item.get("scope", "当前一周 Trace"), "added_at": next_model["updated_at"]})
+    next_model["history_note"] = "Initial model seed explicitly confirmed by the user; its scope is limited to the imported Trace evidence."
+    return next_model

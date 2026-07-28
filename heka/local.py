@@ -51,6 +51,12 @@ Return JSON only:
 {"question":"...","options":["..."],"should_end":false,"note":"只记录事实，不做结论"}
 '''
 
+SEED_MODEL_PROMPT = '''You are Heka's local model-migration assistant. Create a cautious initial personal-model proposal from a bounded packet of the user's own Trace records.
+
+Only describe repeated, source-supported patterns. Keep every dimension scoped to the supplied material; do not diagnose personality or claim a global trait. Prefer 3–6 dimensions and 0–3 hypotheses. Evidence strings must cite a concrete record detail. Use concise Chinese text; only dimension names use snake_case. Return JSON only:
+{"dimensions":[{"name":"...","value":0.0,"confidence":0.0,"scope":"...","evidence":["..."]}],"hypotheses":[{"statement":"...","confidence":0.0,"scope":"...","evidence":["..."],"next_validation":"..."}],"boundary":"这个初始模型只覆盖什么，不覆盖什么"}
+'''
+
 
 def _ollama_chat(messages: list[dict], *, timeout: int = 180) -> tuple[str, str]:
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -101,6 +107,33 @@ def guide_trace(transcript: str) -> dict:
         "should_end": guide.get("should_end") is True,
         "note": "只记录发生过的事；解释会在结束后单独作为候选出现。",
     }
+
+
+def propose_initial_model(evidence: list[dict]) -> dict:
+    """Create a user-reviewable seed, never a direct model write."""
+    content, _ = _ollama_chat([
+        {"role": "system", "content": SEED_MODEL_PROMPT},
+        {"role": "user", "content": "一周 Trace 证据包：\n" + json.dumps(evidence, ensure_ascii=False)},
+    ], timeout=180)
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("本地模型没有返回可用的初始模型，请重试。") from error
+    dimensions = payload.get("dimensions")
+    hypotheses = payload.get("hypotheses", [])
+    if not isinstance(dimensions, list) or not 1 <= len(dimensions) <= 6 or not isinstance(hypotheses, list):
+        raise RuntimeError("初始模型格式不完整，请重试。")
+    clean_dimensions = []
+    for item in dimensions:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("scope"), str) or not isinstance(item.get("evidence"), list):
+            raise RuntimeError("初始模型维度格式不完整，请重试。")
+        value = item.get("value")
+        confidence = item.get("confidence")
+        if not isinstance(value, (int, float)) or not isinstance(confidence, (int, float)):
+            raise RuntimeError("初始模型数值格式不正确，请重试。")
+        clean_dimensions.append({"name": item["name"].strip(), "value": max(0, min(1, float(value))), "confidence": min(0.7, max(0, float(confidence))), "scope": item["scope"].strip(), "evidence": [str(value) for value in item["evidence"][:4]]})
+    clean_hypotheses = [item for item in hypotheses[:3] if isinstance(item, dict) and isinstance(item.get("statement"), str)]
+    return {"dimensions": clean_dimensions, "hypotheses": clean_hypotheses, "boundary": str(payload.get("boundary", "仅基于当前一周 Trace，不代表完整人格。"))}
 
 
 def analyse_record(raw_text: str, current_model: dict) -> tuple[dict, str]:
