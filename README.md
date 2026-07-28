@@ -67,10 +67,11 @@ cp .env.example .env
 # 在 .env 中填入 HEKA_CLOUD_API_KEY（默认使用 DeepSeek，也兼容 OpenAI 格式接口）
 # 从 https://ollama.com/download 安装并启动 Ollama 后：
 bash scripts/setup-local-model.sh
-python3 server.py
 ```
 
-然后打开 <http://127.0.0.1:8787>。
+之后不需要记命令：**双击项目根目录的 `启动 Heka.command`**。它会自动启动本地服务，并在浏览器打开 Heka。使用时请保持弹出的终端窗口开着；关闭它就等于退出 Heka。
+
+如需从终端启动，运行 `python3 server.py` 也会自动打开 <http://127.0.0.1:8787>。
 
 完整的本地 API 与“自带模型”配置见 [API v1](docs/api-v1.md)。
 

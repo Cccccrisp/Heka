@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import webbrowser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -294,5 +295,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     load_dotenv(ROOT / ".env")
     port = int(os.getenv("HEKA_PORT", "8787"))
-    print(f"Heka is ready at http://127.0.0.1:{port}")
-    ThreadingHTTPServer(("127.0.0.1", port), HekaHandler).serve_forever()
+    address = f"http://127.0.0.1:{port}"
+    print(f"Heka is ready at {address}")
+    server = ThreadingHTTPServer(("127.0.0.1", port), HekaHandler)
+    if os.getenv("HEKA_OPEN_BROWSER", "1") != "0":
+        webbrowser.open(address)
+    server.serve_forever()
