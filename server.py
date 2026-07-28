@@ -19,7 +19,8 @@ from heka.schema import apply_confirmed_proposal, apply_initial_model_seed
 
 ROOT = Path(__file__).resolve().parent
 WEB_ROOT = ROOT / "web"
-DATABASE = ROOT / "heka.db"
+DATA_ROOT = Path(os.getenv("HEKA_DATA_DIR", str(ROOT))).expanduser()
+DATABASE = DATA_ROOT / "heka.db"
 
 
 def obsidian_daily_dir() -> str:
@@ -293,11 +294,12 @@ class HekaHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    load_dotenv(ROOT / ".env")
+    load_dotenv(Path(os.getenv("HEKA_CONFIG_FILE", str(ROOT / ".env"))))
     port = int(os.getenv("HEKA_PORT", "8787"))
-    address = f"http://127.0.0.1:{port}"
-    print(f"Heka is ready at {address}")
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", port), HekaHandler)
+    address = f"http://127.0.0.1:{server.server_address[1]}"
+    print(f"HEKA_READY={address}", flush=True)
     if os.getenv("HEKA_OPEN_BROWSER", "1") != "0":
         webbrowser.open(address)
     server.serve_forever()

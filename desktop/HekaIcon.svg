@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Heka application icon</title>
+  <rect width="1024" height="1024" rx="226" fill="#F8F7F4"/>
+  <rect x="34" y="34" width="956" height="956" rx="198" fill="none" stroke="#D7C49E" stroke-width="8"/>
+  <g fill="none" stroke="#202223" stroke-width="72" stroke-linecap="square">
+    <path d="M234 300v424M510 300v424M234 512h276"/>
+  </g>
+  <path d="M783 326L582 512l201 186" fill="none" stroke="#B78A43" stroke-width="72" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>

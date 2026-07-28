@@ -73,6 +73,17 @@ bash scripts/setup-local-model.sh
 
 如需从终端启动，运行 `python3 server.py` 也会自动打开 <http://127.0.0.1:8787>。
 
+### macOS 桌面版（推荐）
+
+浏览器启动器适合开发；日常使用请封装成真正的 Heka.app。它会在自己的窗口中启动 Heka、自动选择本机空闲端口，并将数据库保存在 macOS 的“应用支持/Heka”目录。构建一次后，之后直接点 Heka 图标即可：
+
+```bash
+bash scripts/build-macos-app.sh
+open dist/Heka.app
+```
+
+`.app` 不包含你的数据库或 API Key；这些资料只保存在本机的 `~/Library/Application Support/Heka/`。因此可以安全地把构建方法分享给朋友，让他们使用自己的数据与密钥。
+
 完整的本地 API 与“自带模型”配置见 [API v1](docs/api-v1.md)。
 
 ## 没有 Obsidian 或 Qwen，怎么办？
