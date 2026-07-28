@@ -11,12 +11,15 @@
     <main class="workspace">
       <header class="page-header"><p class="eyebrow">DAILY TRACE</p><p id="runtime" class="runtime">正在读取本地模型</p></header>
       <section class="page-intro trace-intro"><p class="eyebrow">01 / 先记录，再理解</p><h1>你想要记录的 Trace</h1><p>从今天真实发生的一件事开始。本地模型只做简短追问和整理；结束后，它才会形成可审阅的 Trace。</p></section>
-      <section class="trace-studio" aria-label="Trace 记录器">
-        <div class="trace-thread" id="trace-thread"><article class="guide-message"><span>HEKA / LOCAL</span><p>今天有什么值得留下一笔？可以是一件事、一次选择、一个情绪，或一个没有做的行动。</p></article></div>
-        <div id="guide-options" class="guide-options"></div>
-        <div class="trace-input"><textarea id="trace-input" maxlength="1600" placeholder="例如：今天我本来想开始另一个项目，但最后继续修改 Heka……"></textarea><div class="panel-footer"><p id="trace-feedback" class="feedback">内容仅发送给你的本地 Ollama。填写补充后点“记录 Trace”；不再补充时，直接点它保存。</p><div class="trace-buttons"><button id="record-trace" class="primary">记录 Trace <b>→</b></button></div></div></div>
+      <section class="trace-layout">
+        <section class="trace-studio" aria-label="Trace 记录器"><span class="note-pin" aria-hidden="true"></span><p class="note-label">TRACE / LOCAL NOTE</p>
+          <div class="trace-thread" id="trace-thread"><article class="guide-message"><span>HEKA / LOCAL</span><p>今天有什么值得留下一笔？可以是一件事、一次选择、一个情绪，或一个没有做的行动。</p></article></div>
+          <div id="guide-options" class="guide-options"></div>
+          <div class="trace-input"><textarea id="trace-input" maxlength="1600" placeholder="例如：今天我本来想开始另一个项目，但最后继续修改 Heka……"></textarea><div class="panel-footer"><p id="trace-feedback" class="feedback">内容仅发送给你的本地 Ollama。填写补充后点“记录 Trace”；不再补充时，直接点它保存。</p><div class="trace-buttons"><button id="record-trace" class="primary">记录 Trace <b>→</b></button></div></div></div>
+        </section>
+        <aside class="today-panel"><p class="eyebrow">TODAY'S TRACE</p><h2 id="today-title">今日你的 Trace</h2><p id="today-caption" class="today-caption">正在读取今天的记录。</p><div id="today-traces" class="today-traces"><p class="empty">正在读取今天的记录。</p></div></aside>
       </section>
-      <section class="calendar-section"><div class="section-label"><div><p class="eyebrow">TRACE CALENDAR</p><h2>每天留下了什么</h2></div><p id="selected-day" class="calendar-caption">选择一天查看 Trace</p></div><div id="calendar" class="trace-calendar" aria-label="Trace 日历"></div><div id="day-traces" class="day-traces"><p class="empty">正在读取最近的记录。</p></div></section>
+      <section class="calendar-section"><div class="section-label"><div><p class="eyebrow">TRACE CALENDAR</p><h2 id="calendar-month">本月 Trace</h2></div><p class="calendar-caption">红点表示当天有记录</p></div><div id="calendar" class="trace-calendar" aria-label="Trace 日历"></div></section>
     </main>
   </div>
   <script src="home.js"></script>

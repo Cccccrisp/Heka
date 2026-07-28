@@ -57,14 +57,17 @@ $("#record-trace").onclick = async () => {
   feedback.textContent = "先写下一点真实发生的事，再点击“记录 Trace”。";
 };
 
-function datesForCalendar() { const dates=[]; for (let offset=41; offset>=0; offset--) { const date=new Date(); date.setDate(date.getDate()-offset); dates.push(date.toISOString().slice(0,10)); } return dates; }
+function localDay(date) { const year=date.getFullYear(); const month=String(date.getMonth()+1).padStart(2,"0"); const day=String(date.getDate()).padStart(2,"0"); return `${year}-${month}-${day}`; }
+function monthCells(anchor) { const first=new Date(anchor.getFullYear(),anchor.getMonth(),1); const offset=(first.getDay()+6)%7; const total=new Date(anchor.getFullYear(),anchor.getMonth()+1,0).getDate(); return Array.from({length:42},(_,index)=>{ const day=index-offset+1; return day>0&&day<=total ? localDay(new Date(anchor.getFullYear(),anchor.getMonth(),day)) : null; }); }
 async function showDay(day) {
-  const traces = await api(`/api/v1/traces/day/${day}`); $("#selected-day").textContent = day;
-  $("#day-traces").innerHTML = traces.length ? traces.map((item) => { const facts=(item.trace.observable_facts||[]).map((fact)=>fact.statement).join("；"); const tags=(item.trace.tags||[]).join(" · "); return `<article class="day-trace"><p class="day-trace-meta">${item.created_at.slice(11,16)} · ${tags || item.trace.event_type}</p><p>${facts || item.raw_text}</p><span>${item.proposal_status === "accepted" ? "已纳入模型" : "等待你的审阅"}</span></article>`; }).join("") : '<p class="empty">这一天还没有留下 Trace。</p>';
+  const traces = await api(`/api/v1/traces/day/${day}`); const title=$("#today-title"); const caption=$("#today-caption");
+  title.textContent = day === today ? "今日你的 Trace" : `${day} 的 Trace`; caption.textContent = traces.length ? `这一天共有 ${traces.length} 条记录` : "这一天还没有留下 Trace。";
+  $("#today-traces").innerHTML = traces.length ? traces.map((item) => { const facts=(item.trace.observable_facts||[]).map((fact)=>fact.statement).join("；"); const tags=(item.trace.tags||[]).join(" · "); return `<article class="today-trace"><p class="day-trace-meta">${item.created_at.slice(11,16)} · ${tags || item.trace.event_type}</p><p>${facts || item.raw_text}</p><span>${item.proposal_status === "accepted" ? "已纳入模型" : "等待你的审阅"}</span></article>`; }).join("") : '<p class="empty">还没有记录。左侧写下今天发生的事。</p>';
 }
 async function loadCalendar(selected = today) {
-  const entries = await api("/api/v1/traces/calendar"); const counts = new Map(entries.map((item)=>[item.day,item.count])); const calendar=$("#calendar"); calendar.innerHTML="";
-  datesForCalendar().forEach((day) => { const button=document.createElement("button"); const number=Number(day.slice(-2)); const count=counts.get(day)||0; button.className=`calendar-day${count ? " has-trace" : ""}${day===selected ? " selected" : ""}`; button.innerHTML=`<span>${number}</span>${count ? '<i aria-label="有 Trace"></i>' : ""}`; button.onclick=()=>loadCalendar(day); calendar.append(button); });
+  const entries = await api("/api/v1/traces/calendar"); const counts = new Map(entries.map((item)=>[item.day,item.count])); const calendar=$("#calendar"); const anchor=new Date(); const monthName=`${anchor.getFullYear()} 年 ${anchor.getMonth()+1} 月`; $("#calendar-month").textContent=monthName;
+  calendar.innerHTML=["一","二","三","四","五","六","日"].map((day)=>`<span class="weekday">${day}</span>`).join("");
+  monthCells(anchor).forEach((day) => { if (!day) { const blank=document.createElement("span"); blank.className="calendar-blank"; calendar.append(blank); return; } const button=document.createElement("button"); const count=counts.get(day)||0; button.className=`calendar-day${count ? " has-trace" : ""}${day===selected ? " selected" : ""}`; button.innerHTML=`<span>${Number(day.slice(-2))}</span>${count ? '<i aria-label="有 Trace"></i>' : ""}`; button.onclick=()=>loadCalendar(day); calendar.append(button); });
   showDay(selected);
 }
 
