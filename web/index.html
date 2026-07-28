@@ -1,49 +1,22 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Heka · 当前问题</title>
-  <link rel="stylesheet" href="workbench.css" />
-</head>
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Heka · 记录 Trace</title><link rel="stylesheet" href="workbench.css" /></head>
 <body>
   <div class="app-frame">
     <aside class="sidebar">
-      <a class="brand" href="index.html"><img src="assets/heka-wordmark-tight.png" alt="HEKA" /></a>
-      <p class="brand-subtitle">PERSONAL INTELLIGENCE LOOP</p>
-      <nav aria-label="Heka 工作区">
-        <a class="active" href="index.html"><span>01</span> 当前问题</a>
-        <a href="evidence.html"><span>02</span> 观察资料</a>
-        <a href="model.html"><span>03</span> 模型与反证</a>
-        <a href="archive.html"><span>04</span> 档案与设置</a>
-      </nav>
+      <a class="brand" href="index.html"><img src="assets/heka-wordmark-tight.png" alt="HEKA" /></a><p class="brand-subtitle">PERSONAL INTELLIGENCE LOOP</p>
+      <nav aria-label="Heka 工作区"><a class="active" href="index.html"><span>01</span> 记录 Trace</a><a href="evidence.html"><span>02</span> 审阅与证据</a><a href="model.html"><span>03</span> 模型与反证</a><a href="archive.html"><span>04</span> 档案与设置</a></nav>
       <p class="local-mark">● PRIVATE / LOCAL-FIRST</p>
     </aside>
     <main class="workspace">
-      <header class="page-header"><p class="eyebrow">CURRENT RESEARCH</p><p id="runtime" class="runtime">正在读取运行方式</p></header>
-      <section class="page-intro">
-        <p class="eyebrow">01 / 问题先于答案</p>
-        <h1>你现在想认真处理什么？</h1>
-        <p>Heka 先帮你把一个问题变成可检验的行动实验，而不是立刻给你定义。</p>
+      <header class="page-header"><p class="eyebrow">DAILY TRACE</p><p id="runtime" class="runtime">正在读取本地模型</p></header>
+      <section class="page-intro trace-intro"><p class="eyebrow">01 / 先记录，再理解</p><h1>你想要记录的 Trace</h1><p>从今天真实发生的一件事开始。本地模型只做简短追问和整理；结束后，它才会形成可审阅的 Trace。</p></section>
+      <section class="trace-studio" aria-label="Trace 记录器">
+        <div class="trace-thread" id="trace-thread"><article class="guide-message"><span>HEKA / LOCAL</span><p>今天有什么值得留下一笔？可以是一件事、一次选择、一个情绪，或一个没有做的行动。</p></article></div>
+        <div id="guide-options" class="guide-options"></div>
+        <div class="trace-input"><textarea id="trace-input" maxlength="1600" placeholder="例如：今天我本来想开始另一个项目，但最后继续修改 Heka……"></textarea><div class="panel-footer"><p id="trace-feedback" class="feedback">内容仅发送给你的本地 Ollama。</p><div class="trace-buttons"><button id="ask-guide" class="quiet">本地追问</button><button id="end-trace" class="primary">结束 Trace <b>→</b></button></div></div></div>
       </section>
-      <section class="problem-flow" aria-label="当前问题流程">
-        <div class="flow-step is-current"><span>01</span><strong>确认问题</strong><small>由你决定值得研究的事</small></div>
-        <div class="flow-line"></div>
-        <div class="flow-step"><span>02</span><strong>三种方案</strong><small>云端只做有限证据综合</small></div>
-        <div class="flow-line"></div>
-        <div class="flow-step"><span>03</span><strong>真实复盘</strong><small>结果成为下一次证据</small></div>
-      </section>
-      <section class="focus-panel">
-        <div>
-          <p class="eyebrow">DEFINE THE QUESTION</p>
-          <h2>用一句具体的话描述它</h2>
-          <p class="hint">例如：我是否该在未来两周继续投入 Heka，而不是开始另一个新项目？</p>
-        </div>
-        <textarea id="problem" maxlength="800" placeholder="我希望在……之前，弄清楚……"></textarea>
-        <label class="check"><input id="confirm-problem" type="checkbox" /> 这是我希望 Heka 帮我处理的问题。</label>
-        <div class="panel-footer"><p id="feedback" class="feedback"></p><button id="generate-actions" class="primary">生成三个可检验方案 <b>→</b></button></div>
-      </section>
-      <section class="case-section"><div class="section-label"><p class="eyebrow">RUN HISTORY</p><h2>进行中的实验</h2></div><div id="action-list" class="case-list"><p class="empty">你还没有启动一个问题实验。</p></div></section>
+      <section class="calendar-section"><div class="section-label"><div><p class="eyebrow">TRACE CALENDAR</p><h2>每天留下了什么</h2></div><p id="selected-day" class="calendar-caption">选择一天查看 Trace</p></div><div id="calendar" class="trace-calendar" aria-label="Trace 日历"></div><div id="day-traces" class="day-traces"><p class="empty">正在读取最近的记录。</p></div></section>
     </main>
   </div>
   <script src="home.js"></script>

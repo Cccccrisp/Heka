@@ -348,6 +348,26 @@ class HekaStore:
             for row in rows
         ]
 
+    def trace_calendar(self, days: int = 42) -> list[dict[str, Any]]:
+        """Daily local Trace counts for the calendar; never returns raw text."""
+        rows = self.connection.execute(
+            """SELECT substr(e.created_at, 1, 10) AS day, count(*) AS count
+               FROM entries e JOIN traces t ON t.entry_id=e.id
+               WHERE date(e.created_at) >= date('now', ?)
+               GROUP BY substr(e.created_at, 1, 10) ORDER BY day""",
+            (f"-{max(1, min(days, 366))} days",),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def traces_for_day(self, day: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """SELECT e.id, e.created_at, e.raw_text, t.payload AS trace_payload, p.status AS proposal_status
+               FROM entries e JOIN traces t ON t.entry_id=e.id JOIN proposals p ON p.trace_id=t.id
+               WHERE substr(e.created_at, 1, 10)=? ORDER BY e.id DESC""",
+            (day,),
+        ).fetchall()
+        return [{**dict(row), "trace": json.loads(row["trace_payload"])} for row in rows]
+
     def add_model_snapshot(self, model: dict[str, Any], proposal_id: int) -> None:
         self.connection.execute(
             "INSERT INTO model_snapshots(version, created_at, payload, proposal_id) VALUES (?, ?, ?, ?)",

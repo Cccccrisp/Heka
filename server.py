@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from heka.db import HekaStore
 from heka.deepseek import answer_question, load_dotenv, propose_action_experiments
-from heka.local import analyse_record
+from heka.local import analyse_record, guide_trace
 from heka.obsidian import import_daily_records
 from heka.schema import apply_confirmed_proposal
 
@@ -102,6 +102,24 @@ class HekaHandler(SimpleHTTPRequestHandler):
             try: self._json(HTTPStatus.OK, store.action_cases())
             finally: store.close()
             return
+        if path == "/api/traces/calendar":
+            store = self._store()
+            try:
+                self._json(HTTPStatus.OK, store.trace_calendar())
+            finally:
+                store.close()
+            return
+        if path.startswith("/api/traces/day/"):
+            day = path.rsplit("/", 1)[-1]
+            if len(day) != 10:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": "日期格式应为 YYYY-MM-DD。"})
+                return
+            store = self._store()
+            try:
+                self._json(HTTPStatus.OK, store.traces_for_day(day))
+            finally:
+                store.close()
+            return
         return super().do_GET()
 
     def do_POST(self) -> None:
@@ -121,6 +139,12 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     self._json(HTTPStatus.CREATED, {"proposal_id": proposal_id, "analysis": analysis})
                 finally:
                     store.close()
+                return
+            if path == "/api/trace-guide":
+                transcript = str(body.get("transcript", "")).strip()
+                if len(transcript) < 2:
+                    raise ValueError("先写下一点真实发生的事，Heka 才能追问。")
+                self._json(HTTPStatus.OK, guide_trace(transcript))
                 return
             if path == "/api/ask":
                 question = str(body.get("question", "")).strip()
