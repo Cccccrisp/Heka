@@ -10,7 +10,8 @@
 
 | Situation | Asset |
 | --- | --- |
-| Product sidebar, README header, web navigation | `web/assets/heka-wordmark.svg` |
+| Light background wordmark | `web/assets/heka-wordmark.svg` |
+| Product sidebar / dark background | `web/assets/heka-wordmark-dark.svg` |
 | App icon, small avatar, favicon | `web/assets/heka-mark.svg` |
 | Campaign / launch visual | The original full lockup may include the tagline. |
 

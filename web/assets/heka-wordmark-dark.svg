@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 330 72" role="img" aria-labelledby="title">
+  <title id="title">HEKA</title>
+  <g fill="none" stroke="#F8F7F4" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M16 12v48M48 12v48M16 36h32"/>
+    <path d="M78 12v48M78 12h34M78 36h28M78 60h34"/>
+  </g>
+  <g fill="none" stroke="#D1A45D" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M143 12v48M143 36l35-24M143 36l35 24"/>
+    <path d="M220 60l25-48 25 48"/>
+  </g>
+</svg>
