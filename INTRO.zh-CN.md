@@ -36,6 +36,12 @@ V0.1 已支持：本地 Trace 整理、待确认模型提案、Obsidian 每日�
 
 这还是一个个人研究原型，而不是医疗、心理诊断或自动决策工具。
 
+## 没有 Obsidian 或 Qwen？
+
+没有 Obsidian 完全可以使用：直接在「观察资料」页输入记录即可，Obsidian 只是可选的历史资料导入源。
+
+没有 Qwen 时，先安装 Ollama 并运行 `bash scripts/setup-local-model.sh`。Qwen 是推荐的中文本地整理模型，不是唯一选择；也可以下载其他能稳定输出 JSON 的 Ollama 模型，并在 `.env` 设置 `OLLAMA_MODEL`。当前版本仍需要一个本地模型来处理新的原始记录；云端 Key 只用于你主动发起的有限证据综合。
+
 ## 开始使用
 
 ```bash

@@ -36,4 +36,6 @@ Copy `.env.example` to `.env`. Set `HEKA_CLOUD_API_KEY`, `HEKA_CLOUD_BASE_URL`, 
 
 For local Trace organization, install Ollama and run `bash scripts/setup-local-model.sh`. The script downloads `qwen3:4b` by default; set `HEKA_OLLAMA_MODEL` before running it to choose another compatible Ollama model.
 
+Obsidian is optional. Without `HEKA_OBSIDIAN_DAILY_DIR`, users can write records directly in the Evidence workspace and use every core review/model/action flow. A local Ollama model is currently required for **new** raw records; cloud-only inference is deliberately not an implicit fallback because it would upload the raw record.
+
 Do not bind this development server to `0.0.0.0` without adding authentication, encryption, and a deliberate multi-user data boundary.
