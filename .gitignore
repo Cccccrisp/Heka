@@ -1,0 +1,4 @@
+.env
+heka.db
+__pycache__/
+*.pyc
