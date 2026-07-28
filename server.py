@@ -152,7 +152,10 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     evidence = store.recent_evidence(12)
                     if len(evidence) < 3:
                         raise ValueError("至少需要 3 条 Trace，才能建立初始模型。")
-                    self._json(HTTPStatus.OK, {"seed": propose_initial_model(evidence), "source_count": len(evidence)})
+                    report = store.latest_initial_self_report()
+                    if report is None:
+                        raise ValueError("请先完成初始问卷，再建立第一个模型版本。")
+                    self._json(HTTPStatus.OK, {"seed": propose_initial_model(evidence, report["answers"]), "source_count": len(evidence)})
                 finally:
                     store.close()
                 return

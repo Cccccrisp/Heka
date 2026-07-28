@@ -109,11 +109,11 @@ def guide_trace(transcript: str) -> dict:
     }
 
 
-def propose_initial_model(evidence: list[dict]) -> dict:
+def propose_initial_model(evidence: list[dict], initial_self_report: dict | None = None) -> dict:
     """Create a user-reviewable seed, never a direct model write."""
     content, _ = _ollama_chat([
         {"role": "system", "content": SEED_MODEL_PROMPT},
-        {"role": "user", "content": "一周 Trace 证据包：\n" + json.dumps(evidence, ensure_ascii=False)},
+        {"role": "user", "content": "一周 Trace 证据包：\n" + json.dumps(evidence, ensure_ascii=False) + "\n\n用户主动提供的初始自述（自述不是已验证事实，要与 Trace 区分）：\n" + json.dumps(initial_self_report or {}, ensure_ascii=False)},
     ], timeout=180)
     try:
         payload = json.loads(content)
