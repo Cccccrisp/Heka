@@ -84,6 +84,10 @@ open dist/Heka.app
 
 `.app` 不包含你的数据库或 API Key；这些资料只保存在本机的 `~/Library/Application Support/Heka/`。因此可以安全地把构建方法分享给朋友，让他们使用自己的数据与密钥。
 
+### Windows 安装包
+
+Windows 用户不需要运行 macOS 的 `.app`。仓库的 Actions 页面会产出 `Heka-Setup.exe`：下载、运行安装器后，从开始菜单或桌面图标打开 Heka 即可。每位用户的数据与 API Key 会保存在自己的 `%LOCALAPPDATA%\\Heka\\`，不会打进安装包。
+
 完整的本地 API 与“自带模型”配置见 [API v1](docs/api-v1.md)。
 
 ## 没有 Obsidian 或 Qwen，怎么办？

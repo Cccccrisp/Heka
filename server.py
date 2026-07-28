@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import webbrowser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -17,7 +18,7 @@ from heka.obsidian import import_daily_records
 from heka.schema import apply_confirmed_proposal, apply_initial_model_seed
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 WEB_ROOT = ROOT / "web"
 DATA_ROOT = Path(os.getenv("HEKA_DATA_DIR", str(ROOT))).expanduser()
 DATABASE = DATA_ROOT / "heka.db"
@@ -293,7 +294,7 @@ class HekaHandler(SimpleHTTPRequestHandler):
             self._json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
 
 
-if __name__ == "__main__":
+def run_server() -> None:
     load_dotenv(Path(os.getenv("HEKA_CONFIG_FILE", str(ROOT / ".env"))))
     port = int(os.getenv("HEKA_PORT", "8787"))
     DATA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -303,3 +304,7 @@ if __name__ == "__main__":
     if os.getenv("HEKA_OPEN_BROWSER", "1") != "0":
         webbrowser.open(address)
     server.serve_forever()
+
+
+if __name__ == "__main__":
+    run_server()
