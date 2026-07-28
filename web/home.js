@@ -40,8 +40,13 @@ async function saveTrace() {
   feedback.textContent = "正在由本地模型生成可审阅的 Trace…";
   const result = await api("/api/v1/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:draftText()})});
   feedback.textContent = `Trace 已同步到本地数据库，并形成待审阅提案 #${result.proposal_id}。`;
+  const studio = $(".trace-studio");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  studio.classList.add("is-filing");
+  if (!reduceMotion) await new Promise((resolve) => window.setTimeout(resolve, 260));
   transcript.length = 0; hasGuide = false; $("#guide-options").innerHTML = "";
   $("#trace-thread").innerHTML = '<article class="guide-message"><span>HEKA / LOCAL</span><p>已结束这一条 Trace。还想记录另一件真实发生的事吗？</p></article>';
+  studio.classList.remove("is-filing");
   loadCalendar(today);
 }
 
