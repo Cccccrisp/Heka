@@ -3,7 +3,7 @@
 body { margin:0; min-width:320px; color:var(--ink); background:var(--paper); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans SC",sans-serif; }
 .app-frame { display:grid; grid-template-columns:244px minmax(0,1fr); min-height:100vh; }
 .sidebar { position:sticky; top:0; display:flex; flex-direction:column; height:100vh; padding:31px 24px 25px; color:#f6f3ed; background:var(--deep); }
-.brand { display:block; width:132px; height:42px; padding:4px; overflow:hidden; background:#fff; }
+.brand { display:block; width:132px; height:42px; overflow:hidden; }
 .brand img { display:block; width:100%; height:100%; object-fit:contain; }
 .brand-subtitle { margin:13px 0 58px; color:#a8a49b; font-size:9px; font-weight:700; letter-spacing:.16em; }
 nav { display:grid; gap:7px; } nav a { display:flex; align-items:center; gap:12px; padding:11px 9px; color:#c8c5bd; border-left:1px solid transparent; text-decoration:none; font-size:14px; transition:.2s ease; }

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Heka mark</title>
+  <rect width="64" height="64" rx="14" fill="#F8F7F4"/>
+  <g fill="none" stroke="#202223" stroke-width="4" stroke-linecap="square">
+    <path d="M14 18v28M31 18v28M14 32h17"/>
+  </g>
+  <path d="M39 20l-12 12 12 12" fill="none" stroke="#B78A43" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>
