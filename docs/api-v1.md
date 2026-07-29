@@ -16,6 +16,7 @@ The `/api/v1/` prefix is stable for V0.1. Existing `/api/` routes remain availab
 | `GET /api/v1/actions` | Confirmed-problem action cases and reviews. |
 | `GET /api/v1/onboarding` | Latest initial self-report. |
 | `GET /api/v1/obsidian/status` | Local Obsidian connector status. |
+| `GET /api/v1/settings/model` | Local and cloud model settings; never returns API keys. |
 
 ## Write routes
 
@@ -29,12 +30,13 @@ The `/api/v1/` prefix is stable for V0.1. Existing `/api/` routes remain availab
 | `POST /api/v1/actions/:id/review` | `{ "result_note": "..." }` | Records a real outcome or counterexample. |
 | `POST /api/v1/onboarding` | `{ "answers": { ... } }` | Saves self-report as provisional onboarding evidence, not a model update. |
 | `POST /api/v1/obsidian/sync` | `{}` | Reads only the local folder set in `.env`. |
+| `POST /api/v1/settings/model` | Local/cloud endpoint and model names, optional API key | Saves only on this device; API keys are write-only. |
 
 ## Bring your own models
 
 Copy `.env.example` to `.env`. Set `HEKA_CLOUD_API_KEY`, `HEKA_CLOUD_BASE_URL`, and `HEKA_MODEL` to an OpenAI-compatible cloud provider. These values stay on the user's machine and are ignored by Git.
 
-For local Trace organization, install Ollama and run `bash scripts/setup-local-model.sh`. The script downloads `qwen3:4b` by default; set `HEKA_OLLAMA_MODEL` before running it to choose another compatible Ollama model.
+For local Trace organization, install Ollama and run `bash scripts/setup-local-model.sh`. The script downloads `qwen3:8b` by default; set `HEKA_OLLAMA_MODEL` before running it to choose another compatible Ollama model.
 
 Obsidian is optional. Without `HEKA_OBSIDIAN_DAILY_DIR`, users can write records directly in the Evidence workspace and use every core review/model/action flow. A local Ollama model is currently required for **new** raw records; cloud-only inference is deliberately not an implicit fallback because it would upload the raw record.
 

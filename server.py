@@ -22,6 +22,74 @@ ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 WEB_ROOT = ROOT / "web"
 DATA_ROOT = Path(os.getenv("HEKA_DATA_DIR", str(ROOT))).expanduser()
 DATABASE = DATA_ROOT / "heka.db"
+MODEL_SETTING_KEYS = ("OLLAMA_BASE_URL", "OLLAMA_MODEL", "HEKA_CLOUD_BASE_URL", "HEKA_MODEL", "HEKA_CLOUD_API_KEY")
+
+
+def config_path() -> Path:
+    return Path(os.getenv("HEKA_CONFIG_FILE", str(ROOT / ".env"))).expanduser()
+
+
+def _safe_setting(value: object, label: str, *, allow_empty: bool = False) -> str:
+    text = str(value or "").strip()
+    if (not text and not allow_empty) or "\n" in text or "\r" in text or len(text) > 500:
+        raise ValueError(f"{label} 格式不正确。")
+    return text
+
+
+def model_settings() -> dict:
+    """Return runtime config without ever exposing a cloud credential."""
+    return {
+        "local": {
+            "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+            "model": os.getenv("OLLAMA_MODEL", "qwen3:8b"),
+        },
+        "cloud": {
+            "base_url": os.getenv("HEKA_CLOUD_BASE_URL", "https://api.deepseek.com"),
+            "model": os.getenv("HEKA_MODEL", "deepseek-chat"),
+            "api_key_configured": bool(os.getenv("HEKA_CLOUD_API_KEY") or os.getenv("DEEPSEEK_API_KEY")),
+        },
+    }
+
+
+def save_model_settings(payload: dict) -> dict:
+    """Persist selected model settings locally and apply them to this process."""
+    local = payload.get("local") if isinstance(payload.get("local"), dict) else {}
+    cloud = payload.get("cloud") if isinstance(payload.get("cloud"), dict) else {}
+    values = {
+        "OLLAMA_BASE_URL": _safe_setting(local.get("base_url", os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")), "本地模型地址"),
+        "OLLAMA_MODEL": _safe_setting(local.get("model", os.getenv("OLLAMA_MODEL", "qwen3:8b")), "本地模型名称"),
+        "HEKA_CLOUD_BASE_URL": _safe_setting(cloud.get("base_url", os.getenv("HEKA_CLOUD_BASE_URL", "https://api.deepseek.com")), "云端地址"),
+        "HEKA_MODEL": _safe_setting(cloud.get("model", os.getenv("HEKA_MODEL", "deepseek-chat")), "云端模型名称"),
+    }
+    clear_key = cloud.get("clear_api_key") is True
+    new_key = _safe_setting(cloud.get("api_key", ""), "云端 API Key", allow_empty=True)
+    path = config_path()
+    existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    replacements = dict(values)
+    if new_key:
+        replacements["HEKA_CLOUD_API_KEY"] = new_key
+    elif clear_key:
+        replacements["HEKA_CLOUD_API_KEY"] = ""
+    written: set[str] = set()
+    output: list[str] = []
+    for line in existing:
+        key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
+        if key in replacements:
+            output.append(f"{key}={replacements[key]}")
+            written.add(key)
+        else:
+            output.append(line)
+    for key, value in replacements.items():
+        if key not in written:
+            output.append(f"{key}={value}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+    for key, value in replacements.items():
+        if value:
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
+    return model_settings()
 
 
 def obsidian_daily_dir() -> str:
@@ -73,6 +141,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/runtime":
             self._json(HTTPStatus.OK, {"local_model": os.getenv("OLLAMA_MODEL", "qwen3:8b"), "cloud_model": os.getenv("HEKA_MODEL", "deepseek-chat")})
+            return
+        if path == "/api/settings/model":
+            self._json(HTTPStatus.OK, model_settings())
             return
         if path == "/api/local-model/status":
             self._json(HTTPStatus.OK, local_model_status())
@@ -146,6 +217,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     self._json(HTTPStatus.CREATED, {"proposal_id": proposal_id, "analysis": analysis})
                 finally:
                     store.close()
+                return
+            if path == "/api/settings/model":
+                self._json(HTTPStatus.OK, {"settings": save_model_settings(body), "message": "模型设置已只保存在这台设备上。"})
                 return
             if path == "/api/trace-guide":
                 transcript = str(body.get("transcript", "")).strip()
