@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL="${HEKA_OLLAMA_MODEL:-qwen3:4b}"
+MODEL="${HEKA_OLLAMA_MODEL:-qwen3:8b}"
 
 if ! command -v ollama >/dev/null 2>&1; then
   echo "Ollama is not installed yet."

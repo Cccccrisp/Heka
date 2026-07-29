@@ -58,7 +58,7 @@ DeepSeek（云端综合：最终判断）
 
 ## 开始使用
 
-需要 Python 3.11+、Ollama 和 Qwen3 4B；Python 部分不依赖第三方包。每位使用者自己创建 `.env` 并填自己的云端 Key，仓库不包含任何人的密钥或个人数据库。
+需要 Python 3.11+、Ollama 和 Qwen3 8B；Python 部分不依赖第三方包。每位使用者自己创建 `.env` 并填自己的云端 Key，仓库不包含任何人的密钥或个人数据库。
 
 ```bash
 git clone <your-repository-url>
@@ -98,7 +98,7 @@ Obsidian **不是必需品**。打开「观察资料」页面，直接写下一�
 
 ### 没有 Qwen：安装或换一个本地模型
 
-Heka 需要一个运行在 Ollama 里的本地模型来整理原始记录；默认推荐中文表现更好的 `qwen3:4b`。没有下载时，安装 Ollama 后运行：
+Heka 需要一个运行在 Ollama 里的本地模型来整理原始记录；默认推荐中文表现更好的 `qwen3:8b`。没有下载时，安装 Ollama 后运行：
 
 ```bash
 bash scripts/setup-local-model.sh

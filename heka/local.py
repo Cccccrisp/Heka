@@ -66,7 +66,7 @@ Only describe repeated, source-supported patterns. Keep every dimension scoped t
 
 def _ollama_chat(messages: list[dict], *, timeout: int = 180) -> tuple[str, str]:
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     body = {
         "model": model,
         "messages": messages,
@@ -93,7 +93,7 @@ def _ollama_chat(messages: list[dict], *, timeout: int = 180) -> tuple[str, str]
 def local_model_status() -> dict:
     """Describe whether the configured local organizer can accept Trace work."""
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     request = Request(base_url + "/api/tags", method="GET")
     try:
         with urlopen(request, timeout=3) as response:
@@ -117,7 +117,7 @@ def local_model_status() -> dict:
 def install_local_model() -> dict:
     """Download the configured model through the local Ollama service after user request."""
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     request = Request(
         base_url + "/api/pull",
         data=json.dumps({"name": model, "stream": False}).encode("utf-8"),
