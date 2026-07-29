@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -66,6 +67,65 @@ def cloud_endpoint() -> str:
     return base_url + "/chat/completions"
 
 
+CONVERSATION_TOOLS = [
+    {"type":"function","function":{"name":"read_confirmed_model","description":"Read the user-confirmed personal model. Use it only when it helps answer the current question.","parameters":{"type":"object","properties":{}}}},
+    {"type":"function","function":{"name":"search_relevant_traces","description":"Search a bounded set of local Trace evidence relevant to the current question. Never infer from a Trace that is not returned.","parameters":{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":4}},"required":["query"]}}},
+]
+
+def converse_with_harness(history: list[dict], current_model: dict, search: Callable[[str, int], list[dict]]) -> dict:
+    """Cloud reasoning can request bounded read tools; it never writes local state."""
+    system = '''You are Heka, a personal reflection agent. Talk naturally in Chinese, but distinguish 已确认事实, 基于证据的推测, and 待验证问题 when relevant. You may use tools to inspect only the confirmed model or relevant local Trace records. Do not claim to know the user beyond returned evidence. Do not write data, make a permanent model update, or treat one conversation as a stable personality conclusion.
+
+Question policy is strict: do not ask questions by default. Ask at most ONE concise follow-up only if its answer would materially change the conclusion, determine whether a Trace can be formed, or resolve a real contradiction. Never repeat information the user already gave. Never ask for timestamps, bodily details, or generic self-reflection merely to make the record feel complete. If the current material is sufficient, give the bounded answer and stop.'''
+    messages = [{"role":"system","content":system}] + [{"role": item["role"], "content": item["content"]} for item in history[-14:]]
+    used: list[str] = []
+    for _ in range(3):
+        body = {"model":os.getenv("HEKA_MODEL", "deepseek-chat"),"messages":messages,"tools":CONVERSATION_TOOLS,"tool_choice":"auto","temperature":0.35,"max_tokens":1300}
+        request = Request(cloud_endpoint(), data=json.dumps(body).encode("utf-8"), headers={"Authorization":f"Bearer {cloud_key()}","Content-Type":"application/json"}, method="POST")
+        try:
+            with urlopen(request, timeout=90) as response: data=json.loads(response.read().decode("utf-8"))
+        except HTTPError as error: raise RuntimeError(f"Cloud model returned HTTP {error.code}") from error
+        except URLError as error: raise RuntimeError(f"Could not reach cloud model: {error.reason}") from error
+        message = data.get("choices", [{}])[0].get("message", {})
+        calls = message.get("tool_calls") or []
+        if not calls:
+            content = str(message.get("content") or "").strip()
+            if not content: raise RuntimeError("云端模型没有返回对话内容。")
+            return {"content":content,"used_tools":used}
+        messages.append({"role":"assistant","content":message.get("content") or "","tool_calls":calls})
+        for call in calls:
+            name = call.get("function", {}).get("name", ""); raw = call.get("function", {}).get("arguments", "{}")
+            try: arguments = json.loads(raw)
+            except json.JSONDecodeError: arguments = {}
+            if name == "read_confirmed_model": result = current_model; used.append("当前确认模型")
+            elif name == "search_relevant_traces":
+                query = str(arguments.get("query", "")).strip()[:160]; result = search(query, int(arguments.get("limit", 4))); used.append("相关 Trace")
+            else: result = {"error":"这个工具不可用"}
+            messages.append({"role":"tool","tool_call_id":call.get("id", ""),"content":json.dumps(result, ensure_ascii=False)})
+    raise RuntimeError("云端推理调用工具次数过多，请换一种问法。")
+
+def assess_trace_readiness(history: list[dict]) -> dict:
+    """The cloud, not a turn counter, decides whether a Trace can be proposed."""
+    prompt = '''判断这段 Heka 对话是否已经足够形成一条“待审阅 Trace 候选”。只有当用户自己的表达中至少有一个可核验事实，并且事件语境或关键原因已足够清楚时，ready 才能为 true。不要把聊天中的抽象观点或助手推测当作事实。若不够，next_question 必须是唯一最能补齐信息的问题。返回 JSON：{"ready":false,"reason":"...","next_question":"..."}'''
+    body={"model":os.getenv("HEKA_MODEL","deepseek-chat"),"messages":[{"role":"system","content":prompt}]+[{"role":item["role"],"content":item["content"]} for item in history[-16:]],"response_format":{"type":"json_object"},"temperature":0.15,"max_tokens":300}
+    request=Request(cloud_endpoint(),data=json.dumps(body).encode("utf-8"),headers={"Authorization":f"Bearer {cloud_key()}","Content-Type":"application/json"},method="POST")
+    try:
+        with urlopen(request,timeout=60) as response: result=json.loads(json.loads(response.read().decode("utf-8")).get("choices",[{}])[0].get("message",{}).get("content") or "{}")
+    except (HTTPError, URLError, json.JSONDecodeError) as error: raise RuntimeError("云端无法判断这段对话是否可形成 Trace。") from error
+    return {"ready":result.get("ready") is True,"reason":str(result.get("reason") or "需要更多可核验信息。"),"next_question":str(result.get("next_question") or "")}
+
+def propose_initial_model_cloud(evidence: list[dict], self_report: dict) -> dict:
+    """Cloud reasoning proposes the initial model; local code only validates and stores it."""
+    from .local import _validate_initial_model_seed
+    system='''你是 Heka 的初始模型推理层。只根据给出的初始自述与有限 Trace 提出 1-6 个有范围的候选维度和最多 3 个假设；不得诊断人格。每个维度必须有具体 evidence，confidence 不得超过 0.7。返回 JSON：{"dimensions":[{"name":"snake_case","value":0.0,"confidence":0.0,"scope":"...","evidence":["..."]}],"hypotheses":[],"boundary":"..."}'''
+    body={"model":os.getenv("HEKA_MODEL","deepseek-chat"),"messages":[{"role":"system","content":system},{"role":"user","content":"Trace 证据包：\n"+json.dumps(evidence,ensure_ascii=False)+"\n\n初始自述：\n"+json.dumps(self_report,ensure_ascii=False)}],"response_format":{"type":"json_object"},"temperature":0.2,"max_tokens":1400}
+    request=Request(cloud_endpoint(),data=json.dumps(body).encode("utf-8"),headers={"Authorization":f"Bearer {cloud_key()}","Content-Type":"application/json"},method="POST")
+    try:
+        with urlopen(request,timeout=90) as response: content=json.loads(response.read().decode("utf-8")).get("choices",[{}])[0].get("message",{}).get("content")
+        return _validate_initial_model_seed(json.loads(content or "{}"))
+    except (HTTPError, URLError, json.JSONDecodeError, ValueError) as error: raise RuntimeError("云端没有形成可审阅的初始模型，请重试。") from error
+
+
 def analyse_record(raw_text: str, current_model: dict, model: str | None = None) -> tuple[dict, str]:
     key = cloud_key()
     selected_model = model or os.getenv("HEKA_MODEL", "deepseek-chat")
@@ -125,6 +185,8 @@ def deepen_trace(transcript: str) -> dict:
     system = '''You are Heka's optional cloud interpretation layer. You receive one Trace conversation only because the user explicitly requested deeper analysis.
 
 Return JSON only. Make a useful event-level reading, not a personality diagnosis. Separate what the user actually said from your provisional interpretation. Do not make a model update, do not claim stable traits, and do not assume the user's next action. The recommended question must be empty if the transcript already supports a bounded conclusion.
+
+Question policy: the recommended question must be empty by default. Ask at most one question only when the answer would materially change the event-level judgment or determine whether a Trace is ready. Do not repeat facts, ask for timestamps, or request generic elaboration.
 
 Return:
 {"observed":["atomic supported fact"],"interpretation":"provisional reading of this event","alternative":"a plausible competing reading","confidence":0.0,"what_would_change_it":"future or missing evidence that would revise this","recommended_question":"one question that would materially change the reading, or empty","boundary":"what this one Trace cannot establish"}'''

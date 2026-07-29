@@ -12,8 +12,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from heka.db import HekaStore
-from heka.deepseek import answer_question, deepen_trace, load_dotenv, propose_action_experiments
-from heka.local import analyse_record, guide_trace, install_local_model, local_model_status, propose_initial_model
+from heka.deepseek import analyse_record as cloud_analyse_record, answer_question, assess_trace_readiness, converse_with_harness, deepen_trace, load_dotenv, propose_action_experiments, propose_initial_model_cloud
+from heka.local import install_local_model, local_model_status
 from heka.obsidian import import_daily_records
 from heka.schema import apply_confirmed_proposal, apply_initial_model_seed
 
@@ -145,6 +145,11 @@ class HekaHandler(SimpleHTTPRequestHandler):
         if path == "/api/settings/model":
             self._json(HTTPStatus.OK, model_settings())
             return
+        if path.startswith("/api/conversations/"):
+            conversation_id = int(path.rsplit("/", 1)[-1]); store = self._store()
+            try: self._json(HTTPStatus.OK, {"messages": store.conversation_messages(conversation_id)})
+            finally: store.close()
+            return
         if path == "/api/local-model/status":
             self._json(HTTPStatus.OK, local_model_status())
             return
@@ -212,11 +217,36 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 source = "dashboard_continuation" if body.get("continuation_of") else "dashboard"
                 store = self._store()
                 try:
-                    analysis, analyzer = analyse_record(text, store.current_model())
+                    analysis, analyzer = cloud_analyse_record(text, store.current_model())
                     proposal_id = store.add_analysis(text, source, analysis, analyzer)
                     self._json(HTTPStatus.CREATED, {"proposal_id": proposal_id, "analysis": analysis})
                 finally:
                     store.close()
+                return
+            if path == "/api/conversations/chat":
+                text = str(body.get("text", "")).strip()
+                if not text: raise ValueError("先写下你想和 Heka 讨论的事。")
+                store = self._store()
+                try:
+                    conversation_id = int(body.get("conversation_id") or 0) or store.create_conversation(text[:36])
+                    store.add_conversation_message(conversation_id, "user", text)
+                    result = converse_with_harness(store.conversation_messages(conversation_id), store.current_model(), store.search_evidence)
+                    store.add_conversation_message(conversation_id, "assistant", result["content"], result["used_tools"])
+                    readiness = assess_trace_readiness(store.conversation_messages(conversation_id))
+                    self._json(HTTPStatus.OK, {"conversation_id":conversation_id, **result, "trace_readiness":readiness})
+                finally: store.close()
+                return
+            if path.startswith("/api/conversations/") and path.endswith("/trace-candidate"):
+                conversation_id = int(path.split("/")[3]); store = self._store()
+                try:
+                    messages = store.conversation_messages(conversation_id, 30)
+                    user_messages = [item for item in messages if item["role"] == "user"]
+                    if not user_messages: raise ValueError("这段对话还没有足够的用户记录可以形成 Trace。")
+                    transcript = "\n".join(("你：" if item["role"] == "user" else "Heka：") + item["content"] for item in messages)
+                    analysis, analyzer = cloud_analyse_record(transcript, store.current_model())
+                    proposal_id = store.add_analysis(transcript, "cloud_conversation", analysis, analyzer)
+                    self._json(HTTPStatus.CREATED, {"proposal_id":proposal_id, "message":"已生成一条待审阅的 Trace 候选；它尚未改变模型。"})
+                finally: store.close()
                 return
             if path == "/api/settings/model":
                 self._json(HTTPStatus.OK, {"settings": save_model_settings(body), "message": "模型设置已只保存在这台设备上。"})
@@ -225,7 +255,8 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 transcript = str(body.get("transcript", "")).strip()
                 if len(transcript) < 2:
                     raise ValueError("先写下一点真实发生的事，Heka 才能追问。")
-                self._json(HTTPStatus.OK, guide_trace(transcript))
+                result = deepen_trace(transcript)
+                self._json(HTTPStatus.OK, {"judgment":{"observed":"；".join(result["observed"]),"interpretation":result["interpretation"],"confidence":result["confidence"],"what_would_change_it":result["what_would_change_it"]},"question":result["recommended_question"],"options":["我自己补充"],"should_end":not bool(result["recommended_question"]),"note":"这是云端对当前事件的暂定理解，不是人格结论。"})
                 return
             if path == "/api/trace/deepen":
                 transcript = str(body.get("transcript", "")).strip()
@@ -245,7 +276,7 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     report = store.latest_initial_self_report()
                     if report is None:
                         raise ValueError("请先完成初始问卷，再建立第一个模型版本。")
-                    self._json(HTTPStatus.OK, {"seed": propose_initial_model(evidence, report["answers"]), "source_count": len(evidence)})
+                    self._json(HTTPStatus.OK, {"seed": propose_initial_model_cloud(evidence, report["answers"]), "source_count": len(evidence)})
                 finally:
                     store.close()
                 return

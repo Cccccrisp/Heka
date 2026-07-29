@@ -156,6 +156,8 @@ class HekaStore:
                 result_note TEXT,
                 reviewed_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, title TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS conversation_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES conversations(id), created_at TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('user','assistant')), content TEXT NOT NULL, tool_context TEXT NOT NULL DEFAULT '[]');
             """
         )
         source_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(source_documents)")}
@@ -347,6 +349,23 @@ class HekaStore:
             }
             for row in rows
         ]
+
+    def search_evidence(self, query: str, limit: int = 4) -> list[dict[str, Any]]:
+        tokens = [token for token in query.replace("，", " ").replace("。", " ").split() if len(token) > 1][:6]
+        rows = self.connection.execute("""SELECT e.created_at, e.raw_text, t.payload AS trace_payload, p.status
+            FROM entries e JOIN traces t ON t.entry_id=e.id JOIN proposals p ON p.trace_id=t.id ORDER BY e.id DESC LIMIT 30""").fetchall()
+        ranked = sorted(rows, key=lambda row: sum(token in row["raw_text"] for token in tokens), reverse=True)
+        return [{"created_at": row["created_at"], "record": row["raw_text"], "trace": json.loads(row["trace_payload"]), "proposal_status": row["status"]} for row in ranked[:max(1, min(limit, 6))]]
+
+    def create_conversation(self, title: str = "和 Heka 的对话") -> int:
+        now = utc_now(); cursor = self.connection.execute("INSERT INTO conversations(created_at, updated_at, title) VALUES (?, ?, ?)", (now, now, title)); self.connection.commit(); return int(cursor.lastrowid)
+
+    def add_conversation_message(self, conversation_id: int, role: str, content: str, tool_context: list[str] | None = None) -> None:
+        now = utc_now(); self.connection.execute("INSERT INTO conversation_messages(conversation_id, created_at, role, content, tool_context) VALUES (?, ?, ?, ?, ?)", (conversation_id, now, role, content, json.dumps(tool_context or [], ensure_ascii=False))); self.connection.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, conversation_id)); self.connection.commit()
+
+    def conversation_messages(self, conversation_id: int, limit: int = 14) -> list[dict[str, Any]]:
+        rows = self.connection.execute("SELECT role, content, tool_context FROM conversation_messages WHERE conversation_id=? ORDER BY id DESC LIMIT ?", (conversation_id, limit)).fetchall()
+        return [{"role": row["role"], "content": row["content"], "tool_context": json.loads(row["tool_context"])} for row in reversed(rows)]
 
     def trace_calendar(self, days: int = 42) -> list[dict[str, Any]]:
         """Daily local Trace counts for the calendar; never returns raw text."""
