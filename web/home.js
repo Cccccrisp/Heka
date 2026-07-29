@@ -45,12 +45,26 @@ function addMessage(role, text) {
   article.scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 
+function addCloudJudgment(result) {
+  const article = document.createElement("article"); article.className = "cloud-judgment-card";
+  article.innerHTML = `<span>HEKA / 云端深入理解</span><p class="cloud-observed"></p><p class="cloud-interpretation"></p><p class="cloud-alternative"></p><p class="cloud-revision"></p><p class="cloud-boundary"></p>`;
+  article.querySelector(".cloud-observed").textContent = `依据：${result.observed.join("；")}`;
+  article.querySelector(".cloud-interpretation").textContent = `深入判断：${result.interpretation}`;
+  article.querySelector(".cloud-alternative").textContent = `另一种可能：${result.alternative}`;
+  article.querySelector(".cloud-revision").textContent = result.recommended_question ? `最关键的问题：${result.recommended_question}` : `什么会改变判断：${result.what_would_change_it}`;
+  article.querySelector(".cloud-boundary").textContent = `边界：${result.boundary}`;
+  $("#trace-thread").append(article); article.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
 function addJudgment(judgment) {
   const article = document.createElement("article"); article.className = "judgment-card";
-  article.innerHTML = `<span>HEKA / 初步判断</span><p class="judgment-observed"></p><p class="judgment-interpretation"></p><p class="judgment-revision"></p>`;
+  article.innerHTML = `<span>HEKA / 初步判断</span><p class="judgment-observed"></p><p class="judgment-interpretation"></p><p class="judgment-revision"></p><div class="cloud-deepen"></div>`;
   article.querySelector(".judgment-observed").textContent = `已观察到：${judgment.observed}`;
   article.querySelector(".judgment-interpretation").textContent = `当前理解：${judgment.interpretation}`;
   article.querySelector(".judgment-revision").textContent = `它会因什么改变：${judgment.what_would_change_it}`;
+  const deepen = document.createElement("button"); deepen.className = "cloud-deepen-button"; deepen.textContent = "发送这条 Trace 给云端，获得深入判断";
+  deepen.onclick = async () => { deepen.disabled = true; deepen.textContent = "云端正在深入理解…"; try { const result = await api("/api/v1/trace/deepen", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({transcript:draftText()})}); addCloudJudgment(result); deepen.textContent = "已生成云端判断"; } catch (error) { deepen.textContent = error.message; deepen.disabled = false; } };
+  article.querySelector(".cloud-deepen").append(deepen);
   $("#trace-thread").append(article); article.scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 

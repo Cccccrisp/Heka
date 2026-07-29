@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from heka.db import HekaStore
-from heka.deepseek import answer_question, load_dotenv, propose_action_experiments
+from heka.deepseek import answer_question, deepen_trace, load_dotenv, propose_action_experiments
 from heka.local import analyse_record, guide_trace, install_local_model, local_model_status, propose_initial_model
 from heka.obsidian import import_daily_records
 from heka.schema import apply_confirmed_proposal, apply_initial_model_seed
@@ -151,6 +151,12 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 if len(transcript) < 2:
                     raise ValueError("先写下一点真实发生的事，Heka 才能追问。")
                 self._json(HTTPStatus.OK, guide_trace(transcript))
+                return
+            if path == "/api/trace/deepen":
+                transcript = str(body.get("transcript", "")).strip()
+                if len(transcript) < 2:
+                    raise ValueError("先留下当前 Trace 的内容，才能请求深入理解。")
+                self._json(HTTPStatus.OK, deepen_trace(transcript))
                 return
             if path == "/api/local-model/install":
                 self._json(HTTPStatus.OK, install_local_model())

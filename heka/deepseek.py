@@ -119,6 +119,50 @@ def answer_question(question: str, current_model: dict, evidence: list[dict]) ->
     return content
 
 
+def deepen_trace(transcript: str) -> dict:
+    """Create an explicit cloud-only event reading; it never writes a model update."""
+    key = cloud_key()
+    system = '''You are Heka's optional cloud interpretation layer. You receive one Trace conversation only because the user explicitly requested deeper analysis.
+
+Return JSON only. Make a useful event-level reading, not a personality diagnosis. Separate what the user actually said from your provisional interpretation. Do not make a model update, do not claim stable traits, and do not assume the user's next action. The recommended question must be empty if the transcript already supports a bounded conclusion.
+
+Return:
+{"observed":["atomic supported fact"],"interpretation":"provisional reading of this event","alternative":"a plausible competing reading","confidence":0.0,"what_would_change_it":"future or missing evidence that would revise this","recommended_question":"one question that would materially change the reading, or empty","boundary":"what this one Trace cannot establish"}'''
+    body = {
+        "model": os.getenv("HEKA_MODEL", "deepseek-chat"),
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": "Trace conversation:\n" + transcript}],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.25,
+        "max_tokens": 1000,
+    }
+    request = Request(cloud_endpoint(), data=json.dumps(body).encode("utf-8"), headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, method="POST")
+    try:
+        with urlopen(request, timeout=90) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        raise RuntimeError(f"Cloud model returned HTTP {error.code}: {error.read().decode('utf-8', 'replace')}") from error
+    except URLError as error:
+        raise RuntimeError(f"Could not reach cloud model: {error.reason}") from error
+    content = data.get("choices", [{}])[0].get("message", {}).get("content")
+    try:
+        result = json.loads(content or "{}")
+    except json.JSONDecodeError as error:
+        raise RuntimeError("云端模型没有返回可用的深入判断，请重试。") from error
+    required_text = ("interpretation", "alternative", "what_would_change_it", "recommended_question", "boundary")
+    if not isinstance(result.get("observed"), list) or not all(isinstance(result.get(field), str) for field in required_text):
+        raise RuntimeError("云端深入判断格式不完整，请重试。")
+    confidence = result.get("confidence", 0.0)
+    return {
+        "observed": [str(item) for item in result["observed"][:4]],
+        "interpretation": result["interpretation"].strip(),
+        "alternative": result["alternative"].strip(),
+        "confidence": min(0.7, max(0.0, float(confidence) if isinstance(confidence, (int, float)) else 0.0)),
+        "what_would_change_it": result["what_would_change_it"].strip(),
+        "recommended_question": result["recommended_question"].strip(),
+        "boundary": result["boundary"].strip(),
+    }
+
+
 def propose_action_experiments(problem: str, evidence: list[dict]) -> dict:
     """Cloud Action Layer: propose bounded experiments, never instructions or model writes."""
     key = cloud_key()
