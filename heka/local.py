@@ -63,14 +63,53 @@ Only describe repeated, source-supported patterns. Keep every dimension scoped t
 {"dimensions":[{"name":"...","value":0.0,"confidence":0.0,"scope":"...","evidence":["..."]}],"hypotheses":[{"statement":"...","confidence":0.0,"scope":"...","evidence":["..."],"next_validation":"..."}],"boundary":"这个初始模型只覆盖什么，不覆盖什么"}
 '''
 
+SEED_MODEL_SCHEMA = {
+    "type": "object",
+    "required": ["dimensions", "hypotheses", "boundary"],
+    "properties": {
+        "dimensions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+                "type": "object",
+                "required": ["name", "value", "confidence", "scope", "evidence"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "value": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 0.7},
+                    "scope": {"type": "string"},
+                    "evidence": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"}},
+                },
+            },
+        },
+        "hypotheses": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+                "type": "object",
+                "required": ["statement", "confidence", "scope", "evidence", "next_validation"],
+                "properties": {
+                    "statement": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 0.7},
+                    "scope": {"type": "string"},
+                    "evidence": {"type": "array", "items": {"type": "string"}},
+                    "next_validation": {"type": "string"},
+                },
+            },
+        },
+        "boundary": {"type": "string"},
+    },
+}
 
-def _ollama_chat(messages: list[dict], *, timeout: int = 180) -> tuple[str, str]:
+
+def _ollama_chat(messages: list[dict], *, timeout: int = 180, response_format: object = "json") -> tuple[str, str]:
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
     model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     body = {
         "model": model,
         "messages": messages,
-        "format": "json",
+        "format": response_format,
         "think": False,
         "stream": False,
         "options": {"temperature": 0.2},
@@ -172,31 +211,50 @@ def guide_trace(transcript: str) -> dict:
     }
 
 
-def propose_initial_model(evidence: list[dict], initial_self_report: dict | None = None) -> dict:
-    """Create a user-reviewable seed, never a direct model write."""
-    content, _ = _ollama_chat([
-        {"role": "system", "content": SEED_MODEL_PROMPT},
-        {"role": "user", "content": "一周 Trace 证据包：\n" + json.dumps(evidence, ensure_ascii=False) + "\n\n用户主动提供的初始自述（自述不是已验证事实，要与 Trace 区分）：\n" + json.dumps(initial_self_report or {}, ensure_ascii=False)},
-    ], timeout=180)
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError as error:
-        raise RuntimeError("本地模型没有返回可用的初始模型，请重试。") from error
+def _validate_initial_model_seed(payload: object) -> dict:
+    """Validate the candidate before it can ever reach a model snapshot."""
+    if not isinstance(payload, dict):
+        raise ValueError("顶层不是 JSON 对象")
     dimensions = payload.get("dimensions")
     hypotheses = payload.get("hypotheses", [])
     if not isinstance(dimensions, list) or not 1 <= len(dimensions) <= 6 or not isinstance(hypotheses, list):
-        raise RuntimeError("初始模型格式不完整，请重试。")
+        raise ValueError("缺少有效的 dimensions 或 hypotheses")
     clean_dimensions = []
     for item in dimensions:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("scope"), str) or not isinstance(item.get("evidence"), list):
-            raise RuntimeError("初始模型维度格式不完整，请重试。")
+            raise ValueError("某个维度缺少 name、scope 或 evidence")
         value = item.get("value")
         confidence = item.get("confidence")
         if not isinstance(value, (int, float)) or not isinstance(confidence, (int, float)):
-            raise RuntimeError("初始模型数值格式不正确，请重试。")
-        clean_dimensions.append({"name": item["name"].strip(), "value": max(0, min(1, float(value))), "confidence": min(0.7, max(0, float(confidence))), "scope": item["scope"].strip(), "evidence": [str(value) for value in item["evidence"][:4]]})
+            raise ValueError("某个维度缺少数值 value 或 confidence")
+        evidence = [str(entry).strip() for entry in item["evidence"][:4] if str(entry).strip()]
+        if not item["name"].strip() or not item["scope"].strip() or not evidence:
+            raise ValueError("某个维度没有可审阅的名称、范围或证据")
+        clean_dimensions.append({"name": item["name"].strip(), "value": max(0, min(1, float(value))), "confidence": min(0.7, max(0, float(confidence))), "scope": item["scope"].strip(), "evidence": evidence})
     clean_hypotheses = [item for item in hypotheses[:3] if isinstance(item, dict) and isinstance(item.get("statement"), str)]
-    return {"dimensions": clean_dimensions, "hypotheses": clean_hypotheses, "boundary": str(payload.get("boundary", "仅基于当前一周 Trace，不代表完整人格。"))}
+    return {"dimensions": clean_dimensions, "hypotheses": clean_hypotheses, "boundary": str(payload.get("boundary", "仅基于当前一周 Trace，不代表完整人格。")).strip() or "仅基于当前一周 Trace，不代表完整人格。"}
+
+
+def propose_initial_model(evidence: list[dict], initial_self_report: dict | None = None) -> dict:
+    """Create a user-reviewable seed, retrying one malformed local answer."""
+    messages = [
+        {"role": "system", "content": SEED_MODEL_PROMPT},
+        {"role": "user", "content": "一周 Trace 证据包：\n" + json.dumps(evidence, ensure_ascii=False) + "\n\n用户主动提供的初始自述（自述不是已验证事实，要与 Trace 区分）：\n" + json.dumps(initial_self_report or {}, ensure_ascii=False)},
+    ]
+    last_error: Exception | None = None
+    for attempt in range(2):
+        content = ""
+        try:
+            content, _ = _ollama_chat(messages, timeout=180, response_format=SEED_MODEL_SCHEMA)
+            return _validate_initial_model_seed(json.loads(content))
+        except (RuntimeError, ValueError, json.JSONDecodeError) as error:
+            last_error = error
+        if attempt == 0:
+            messages.extend([
+                {"role": "assistant", "content": content},
+                {"role": "user", "content": "上一次输出不能被写入，因为：" + str(last_error) + "。请只修复 JSON，补全所有必填字段；每个维度必须有 1 至 4 条具体证据，不要生成 Markdown。"},
+            ])
+    raise RuntimeError(f"本地模型两次都没有形成可审阅的初始模型：{last_error}")
 
 
 def analyse_record(raw_text: str, current_model: dict) -> tuple[dict, str]:

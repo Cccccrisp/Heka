@@ -72,7 +72,7 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 store.close()
             return
         if path == "/api/runtime":
-            self._json(HTTPStatus.OK, {"local_model": os.getenv("OLLAMA_MODEL", "qwen3:4b"), "cloud_model": os.getenv("HEKA_MODEL", "deepseek-chat")})
+            self._json(HTTPStatus.OK, {"local_model": os.getenv("OLLAMA_MODEL", "qwen3:8b"), "cloud_model": os.getenv("HEKA_MODEL", "deepseek-chat")})
             return
         if path == "/api/local-model/status":
             self._json(HTTPStatus.OK, local_model_status())
