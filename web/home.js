@@ -3,6 +3,8 @@ const today = new Date().toISOString().slice(0, 10);
 const transcript = [];
 let hasGuide = false;
 let localOrganizerReady = false;
+let guideAsked = false;
+let isSubmitting = false;
 
 async function api(url, options) {
   const response = await fetch(url, options);
@@ -43,32 +45,45 @@ function addMessage(role, text) {
   article.scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 
+function addJudgment(judgment) {
+  const article = document.createElement("article"); article.className = "judgment-card";
+  article.innerHTML = `<span>HEKA / 初步判断</span><p class="judgment-observed"></p><p class="judgment-interpretation"></p><p class="judgment-revision"></p>`;
+  article.querySelector(".judgment-observed").textContent = `已观察到：${judgment.observed}`;
+  article.querySelector(".judgment-interpretation").textContent = `当前理解：${judgment.interpretation}`;
+  article.querySelector(".judgment-revision").textContent = `它会因什么改变：${judgment.what_would_change_it}`;
+  $("#trace-thread").append(article); article.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
 function draftText() { return transcript.map((turn) => `${turn.role === "guide" ? "Heka 追问" : "用户"}：${turn.text}`).join("\n"); }
 
 async function requestGuide() {
   const feedback = $("#trace-feedback");
   feedback.textContent = "本地模型正在整理下一句追问…";
   const guide = await api("/api/v1/trace-guide", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({transcript:draftText()})});
-  transcript.push({role:"guide", text:guide.question}); addMessage("guide", guide.question); hasGuide = true;
+  addJudgment(guide.judgment); guideAsked = true; hasGuide = true;
+  if (!guide.should_end) { transcript.push({role:"guide", text:guide.question}); addMessage("guide", guide.question); }
   const options = $("#guide-options"); options.innerHTML = "";
   guide.options.forEach((option) => {
     const button = document.createElement("button"); button.className = "option"; button.textContent = option;
-    button.onclick = async () => { if (option === "我自己补充") { $("#trace-input").focus(); return; } transcript.push({role:"user", text:option}); addMessage("user", option); try { await requestGuide(); } catch (error) { feedback.textContent = error.message; } };
+    button.onclick = async () => { if (option === "我自己补充") { $("#trace-input").focus(); return; } transcript.push({role:"user", text:option}); addMessage("user", option); await saveTrace(); };
     options.append(button);
   });
-  feedback.textContent = guide.note + " 还要补充就继续写；不再补充时，直接点击“记录 Trace”保存。";
+  feedback.textContent = guide.should_end ? `${guide.note} 信息已足够；点击“记录 Trace”保存。` : `${guide.note} 请回答这个唯一会改变判断的问题；回答后将直接保存。`;
 }
 
 async function saveTrace() {
+  if (isSubmitting) return; isSubmitting = true;
   const feedback = $("#trace-feedback");
   feedback.textContent = "正在由本地模型生成可审阅的 Trace…";
-  const result = await api("/api/v1/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:draftText()})});
+  let result;
+  try { result = await api("/api/v1/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:draftText()})}); }
+  catch (error) { isSubmitting = false; throw error; }
   feedback.textContent = `Trace 已同步到本地数据库，并形成待审阅提案 #${result.proposal_id}。`;
   const studio = $(".trace-studio");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   studio.classList.add("is-filing");
   if (!reduceMotion) await new Promise((resolve) => window.setTimeout(resolve, 260));
-  transcript.length = 0; hasGuide = false; $("#guide-options").innerHTML = "";
+  transcript.length = 0; hasGuide = false; guideAsked = false; isSubmitting = false; $("#guide-options").innerHTML = "";
   $("#trace-thread").innerHTML = '<article class="guide-message"><span>HEKA / LOCAL</span><p>已结束这一条 Trace。还想记录另一件真实发生的事吗？</p></article>';
   studio.classList.remove("is-filing");
   showToday();
@@ -77,7 +92,7 @@ async function saveTrace() {
 $("#record-trace").onclick = async () => {
   if (!localOrganizerReady) return;
   const input = $("#trace-input"); const text = input.value.trim(); const feedback = $("#trace-feedback");
-  if (text) { transcript.push({role:"user", text}); addMessage("user", text); input.value = ""; try { await requestGuide(); } catch (error) { feedback.textContent = error.message; } return; }
+  if (text) { transcript.push({role:"user", text}); addMessage("user", text); input.value = ""; try { if (guideAsked) await saveTrace(); else await requestGuide(); } catch (error) { feedback.textContent = error.message; } return; }
   if (hasGuide && transcript.some((turn) => turn.role === "user")) { try { await saveTrace(); } catch (error) { feedback.textContent = error.message; } return; }
   feedback.textContent = "先写下一点真实发生的事，再点击“记录 Trace”。";
 };

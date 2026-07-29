@@ -45,10 +45,16 @@ Fact and interpretation indexes start at 0. For one record, prefer hypothesis or
 
 TRACE_GUIDE_PROMPT = '''You are Heka's local Trace guide. Help a user complete one short, evidence-grounded daily record.
 
-You do not diagnose, analyze personality, or decide what the record means. Ask one concise Chinese follow-up question that helps make the record concrete: what happened, what was chosen or done, what was felt, or what happened afterwards. Offer 2 to 4 short selectable answers plus "我自己补充". If the record already contains a clear event, choice/action, and outcome or feeling, set should_end to true and offer "结束 Trace".
+First make one useful, bounded preliminary judgment about THIS event. This is not a personality diagnosis or a stable model update. Clearly separate observed facts from a possible explanation; use conditional language such as "当前更像是" or "暂时看来". Then ask at most one concise Chinese question whose answer would materially change that preliminary judgment. Do not ask for timestamps, bodily details, or repeated facts unless they would change the judgment. Offer 2 to 4 short selectable answers plus "我自己补充". If the record already gives enough evidence, set should_end to true with no question.
 
 Return JSON only:
-{"question":"...","options":["..."],"should_end":false,"note":"只记录事实，不做结论"}
+{
+  "judgment":{"observed":"what the user has actually said","interpretation":"a provisional event-level reading","confidence":0.0,"what_would_change_it":"what evidence could revise this reading"},
+  "question":"one high-value question, or empty when should_end is true",
+  "options":["short option"],
+  "should_end":false,
+  "note":"这是对当前事件的暂定理解，不是人格结论"
+}
 '''
 
 SEED_MODEL_PROMPT = '''You are Heka's local model-migration assistant. Create a cautious initial personal-model proposal from a bounded packet of the user's own Trace records.
@@ -129,7 +135,7 @@ def install_local_model() -> dict:
 
 
 def guide_trace(transcript: str) -> dict:
-    """Ask one bounded local follow-up before a Trace is committed."""
+    """Make a provisional event judgment and ask at most one discriminating follow-up."""
     content, _ = _ollama_chat([
         {"role": "system", "content": TRACE_GUIDE_PROMPT},
         {"role": "user", "content": "当前 Trace 对话：\n" + transcript},
@@ -138,18 +144,31 @@ def guide_trace(transcript: str) -> dict:
         guide = json.loads(content)
     except json.JSONDecodeError as error:
         raise RuntimeError("本地模型没有返回可用的追问，请重试或直接结束 Trace。") from error
-    question = guide.get("question")
-    options = guide.get("options")
-    if not isinstance(question, str) or not question.strip() or not isinstance(options, list):
-        raise RuntimeError("本地模型的追问格式不完整，请重试或直接结束 Trace。")
+    judgment = guide.get("judgment")
+    if not isinstance(judgment, dict) or not all(isinstance(judgment.get(field), str) and judgment[field].strip() for field in ("observed", "interpretation", "what_would_change_it")):
+        raise RuntimeError("本地模型没有形成可审阅的初步判断，请重试。")
+    confidence = judgment.get("confidence")
+    if not isinstance(confidence, (int, float)):
+        confidence = 0.0
+    should_end = guide.get("should_end") is True
+    question = guide.get("question", "")
+    options = guide.get("options", [])
+    if not should_end and (not isinstance(question, str) or not question.strip() or not isinstance(options, list)):
+        raise RuntimeError("本地模型的关键追问格式不完整，请重试或直接结束 Trace。")
     clean_options = [option.strip() for option in options if isinstance(option, str) and option.strip()][:4]
-    if "我自己补充" not in clean_options:
+    if not should_end and "我自己补充" not in clean_options:
         clean_options.append("我自己补充")
     return {
-        "question": question.strip(),
+        "judgment": {
+            "observed": judgment["observed"].strip(),
+            "interpretation": judgment["interpretation"].strip(),
+            "confidence": min(0.6, max(0.0, float(confidence))),
+            "what_would_change_it": judgment["what_would_change_it"].strip(),
+        },
+        "question": question.strip() if isinstance(question, str) else "",
         "options": clean_options,
-        "should_end": guide.get("should_end") is True,
-        "note": "只记录发生过的事；解释会在结束后单独作为候选出现。",
+        "should_end": should_end,
+        "note": "这是对当前事件的暂定理解，不是人格结论。",
     }
 
 
