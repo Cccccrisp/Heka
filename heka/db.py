@@ -158,11 +158,18 @@ class HekaStore:
             );
             CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, title TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS conversation_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES conversations(id), created_at TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('user','assistant')), content TEXT NOT NULL, tool_context TEXT NOT NULL DEFAULT '[]');
+            CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, title TEXT NOT NULL, purpose TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')));
             """
         )
         source_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(source_documents)")}
         if "record_kind" not in source_columns:
             self.connection.execute("ALTER TABLE source_documents ADD COLUMN record_kind TEXT NOT NULL DEFAULT 'reflection'")
+        entry_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(entries)")}
+        if "project_id" not in entry_columns:
+            self.connection.execute("ALTER TABLE entries ADD COLUMN project_id INTEGER REFERENCES projects(id)")
+        conversation_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(conversations)")}
+        if "project_id" not in conversation_columns:
+            self.connection.execute("ALTER TABLE conversations ADD COLUMN project_id INTEGER REFERENCES projects(id)")
         self.connection.execute(
             """UPDATE source_documents SET record_kind='research'
                WHERE title LIKE 'Day 3%' OR title LIKE 'Day 4%' OR title LIKE 'Day 5%' OR title LIKE '2026-07-24%'"""
@@ -183,10 +190,11 @@ class HekaStore:
         analysis: dict[str, Any],
         analyzer: str,
         source_document: dict[str, str | None] | None = None,
+        project_id: int | None = None,
     ) -> int:
         now = utc_now()
         cursor = self.connection.execute(
-            "INSERT INTO entries(created_at, source, raw_text) VALUES (?, ?, ?)", (now, source, raw_text)
+            "INSERT INTO entries(created_at, source, raw_text, project_id) VALUES (?, ?, ?, ?)", (now, source, raw_text, project_id)
         )
         entry_id = cursor.lastrowid
         if source_document is not None:
@@ -253,6 +261,8 @@ class HekaStore:
             "INSERT INTO proposals(trace_id, created_at, payload, status) VALUES (?, ?, ?, 'proposed')",
             (trace_id, now, json.dumps(analysis["proposal"], ensure_ascii=False)),
         ).lastrowid
+        if project_id:
+            self.connection.execute("UPDATE projects SET updated_at=? WHERE id=?", (now, project_id))
         self.connection.commit()
         return int(proposal_id)
 
@@ -357,11 +367,36 @@ class HekaStore:
         ranked = sorted(rows, key=lambda row: sum(token in row["raw_text"] for token in tokens), reverse=True)
         return [{"created_at": row["created_at"], "record": row["raw_text"], "trace": json.loads(row["trace_payload"]), "proposal_status": row["status"]} for row in ranked[:max(1, min(limit, 6))]]
 
-    def create_conversation(self, title: str = "和 Heka 的对话") -> int:
-        now = utc_now(); cursor = self.connection.execute("INSERT INTO conversations(created_at, updated_at, title) VALUES (?, ?, ?)", (now, now, title)); self.connection.commit(); return int(cursor.lastrowid)
+    def projects(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute("""SELECT p.*, count(DISTINCT c.id) AS conversation_count, count(DISTINCT e.id) AS trace_count
+            FROM projects p LEFT JOIN conversations c ON c.project_id=p.id LEFT JOIN entries e ON e.project_id=p.id
+            WHERE p.status='active' GROUP BY p.id ORDER BY p.updated_at DESC, p.id DESC""").fetchall()
+        return [dict(row) for row in rows]
+
+    def create_project(self, title: str, purpose: str = "") -> dict[str, Any]:
+        title = title.strip()[:48]
+        if not title: raise ValueError("给这个长期方向起一个简短名称。")
+        now = utc_now()
+        cursor = self.connection.execute("INSERT INTO projects(created_at, updated_at, title, purpose) VALUES (?, ?, ?, ?)", (now, now, title, purpose.strip()[:180]))
+        self.connection.commit()
+        return {"id": int(cursor.lastrowid), "title": title, "purpose": purpose.strip()[:180], "conversation_count": 0, "trace_count": 0}
+
+    def conversations(self, project_id: int | None = None) -> list[dict[str, Any]]:
+        if project_id:
+            rows = self.connection.execute("SELECT id, title, updated_at, project_id FROM conversations WHERE project_id=? ORDER BY updated_at DESC LIMIT 24", (project_id,)).fetchall()
+        else:
+            rows = self.connection.execute("SELECT id, title, updated_at, project_id FROM conversations WHERE project_id IS NULL ORDER BY updated_at DESC LIMIT 24").fetchall()
+        return [dict(row) for row in rows]
+
+    def conversation(self, conversation_id: int) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT id, title, updated_at, project_id FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+        return None if row is None else dict(row)
+
+    def create_conversation(self, title: str = "和 Heka 的对话", project_id: int | None = None) -> int:
+        now = utc_now(); cursor = self.connection.execute("INSERT INTO conversations(created_at, updated_at, title, project_id) VALUES (?, ?, ?, ?)", (now, now, title, project_id)); self.connection.commit(); return int(cursor.lastrowid)
 
     def add_conversation_message(self, conversation_id: int, role: str, content: str, tool_context: list[str] | None = None) -> None:
-        now = utc_now(); self.connection.execute("INSERT INTO conversation_messages(conversation_id, created_at, role, content, tool_context) VALUES (?, ?, ?, ?, ?)", (conversation_id, now, role, content, json.dumps(tool_context or [], ensure_ascii=False))); self.connection.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, conversation_id)); self.connection.commit()
+        now = utc_now(); self.connection.execute("INSERT INTO conversation_messages(conversation_id, created_at, role, content, tool_context) VALUES (?, ?, ?, ?, ?)", (conversation_id, now, role, content, json.dumps(tool_context or [], ensure_ascii=False))); self.connection.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, conversation_id)); self.connection.execute("UPDATE projects SET updated_at=? WHERE id=(SELECT project_id FROM conversations WHERE id=?)", (now, conversation_id)); self.connection.commit()
 
     def conversation_messages(self, conversation_id: int, limit: int = 14) -> list[dict[str, Any]]:
         rows = self.connection.execute("SELECT role, content, tool_context FROM conversation_messages WHERE conversation_id=? ORDER BY id DESC LIMIT ?", (conversation_id, limit)).fetchall()

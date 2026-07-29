@@ -9,7 +9,7 @@ import webbrowser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from heka.db import HekaStore
 from heka.deepseek import analyse_record as cloud_analyse_record, answer_question, assess_trace_readiness, converse_with_harness, deepen_trace, load_dotenv, propose_action_experiments, propose_initial_model_cloud
@@ -119,7 +119,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
         return store
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
         if path == "/api/v1/health":
             self._json(HTTPStatus.OK, {"status": "ok", "api_version": "v1", "storage": "local_sqlite"})
             return
@@ -144,6 +146,18 @@ class HekaHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/settings/model":
             self._json(HTTPStatus.OK, model_settings())
+            return
+        if path == "/api/projects":
+            store = self._store()
+            try: self._json(HTTPStatus.OK, store.projects())
+            finally: store.close()
+            return
+        if path == "/api/conversations":
+            project_value = (query.get("project_id") or [""])[0]
+            project_id = int(project_value) if project_value.isdigit() else None
+            store = self._store()
+            try: self._json(HTTPStatus.OK, store.conversations(project_id))
+            finally: store.close()
             return
         if path.startswith("/api/conversations/"):
             conversation_id = int(path.rsplit("/", 1)[-1]); store = self._store()
@@ -210,6 +224,13 @@ class HekaHandler(SimpleHTTPRequestHandler):
             path = "/api/" + path[len("/api/v1/"):]
         try:
             body = self._body()
+            if path == "/api/projects":
+                store = self._store()
+                try:
+                    project = store.create_project(str(body.get("title", "")), str(body.get("purpose", "")))
+                    self._json(HTTPStatus.CREATED, project)
+                finally: store.close()
+                return
             if path == "/api/capture":
                 text = str(body.get("text", "")).strip()
                 if not text:
@@ -228,7 +249,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 if not text: raise ValueError("先写下你想和 Heka 讨论的事。")
                 store = self._store()
                 try:
-                    conversation_id = int(body.get("conversation_id") or 0) or store.create_conversation(text[:36])
+                    conversation_id = int(body.get("conversation_id") or 0)
+                    project_id = int(body.get("project_id") or 0) or None
+                    conversation_id = conversation_id or store.create_conversation(text[:36], project_id)
                     store.add_conversation_message(conversation_id, "user", text)
                     result = converse_with_harness(store.conversation_messages(conversation_id), store.current_model(), store.search_evidence)
                     store.add_conversation_message(conversation_id, "assistant", result["content"], result["used_tools"])
@@ -244,7 +267,8 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     if not user_messages: raise ValueError("这段对话还没有足够的用户记录可以形成 Trace。")
                     transcript = "\n".join(("你：" if item["role"] == "user" else "Heka：") + item["content"] for item in messages)
                     analysis, analyzer = cloud_analyse_record(transcript, store.current_model())
-                    proposal_id = store.add_analysis(transcript, "cloud_conversation", analysis, analyzer)
+                    conversation = store.conversation(conversation_id)
+                    proposal_id = store.add_analysis(transcript, "cloud_conversation", analysis, analyzer, project_id=conversation.get("project_id") if conversation else None)
                     self._json(HTTPStatus.CREATED, {"proposal_id":proposal_id, "message":"已生成一条待审阅的 Trace 候选；它尚未改变模型。"})
                 finally: store.close()
                 return
