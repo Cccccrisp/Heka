@@ -368,6 +368,30 @@ class HekaStore:
         ).fetchall()
         return [{**dict(row), "trace": json.loads(row["trace_payload"])} for row in rows]
 
+    def delete_trace_entry(self, entry_id: int) -> dict[str, Any] | None:
+        """Remove one local Trace and its derived analysis, never model history."""
+        row = self.connection.execute(
+            """SELECT t.id AS trace_id, p.status AS proposal_status
+               FROM entries e JOIN traces t ON t.entry_id=e.id
+               LEFT JOIN proposals p ON p.trace_id=t.id WHERE e.id=?""",
+            (entry_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        trace_id = int(row["trace_id"])
+        self.connection.execute("DELETE FROM proposals WHERE trace_id=?", (trace_id,))
+        self.connection.execute(
+            "DELETE FROM trace_decision_options WHERE decision_id IN (SELECT id FROM trace_decisions WHERE trace_id=?)",
+            (trace_id,),
+        )
+        for table in ("trace_decisions", "trace_actions", "trace_emotions", "trace_interpretations", "trace_tags", "trace_facts", "trace_events"):
+            self.connection.execute(f"DELETE FROM {table} WHERE trace_id=?", (trace_id,))
+        self.connection.execute("DELETE FROM source_documents WHERE entry_id=?", (entry_id,))
+        self.connection.execute("DELETE FROM traces WHERE id=?", (trace_id,))
+        self.connection.execute("DELETE FROM entries WHERE id=?", (entry_id,))
+        self.connection.commit()
+        return {"proposal_status": row["proposal_status"]}
+
     def add_model_snapshot(self, model: dict[str, Any], proposal_id: int) -> None:
         self.connection.execute(
             "INSERT INTO model_snapshots(version, created_at, payload, proposal_id) VALUES (?, ?, ?, ?)",

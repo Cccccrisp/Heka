@@ -138,10 +138,11 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 text = str(body.get("text", "")).strip()
                 if not text:
                     raise ValueError("请先写下一条真实记录。")
+                source = "dashboard_continuation" if body.get("continuation_of") else "dashboard"
                 store = self._store()
                 try:
                     analysis, analyzer = analyse_record(text, store.current_model())
-                    proposal_id = store.add_analysis(text, "dashboard", analysis, analyzer)
+                    proposal_id = store.add_analysis(text, source, analysis, analyzer)
                     self._json(HTTPStatus.CREATED, {"proposal_id": proposal_id, "analysis": analysis})
                 finally:
                     store.close()
@@ -303,6 +304,34 @@ class HekaHandler(SimpleHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError) as error:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
         except Exception as error:  # keep the browser error useful without leaking the API key
+            self._json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
+
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        if path.startswith("/api/v1/"):
+            path = "/api/" + path[len("/api/v1/"):]
+        if not path.startswith("/api/traces/"):
+            self._json(HTTPStatus.NOT_FOUND, {"error": "找不到这个接口。"})
+            return
+        try:
+            entry_id = int(path.rsplit("/", 1)[-1])
+            if entry_id < 1:
+                raise ValueError("无效的 Trace。")
+            store = self._store()
+            try:
+                deleted = store.delete_trace_entry(entry_id)
+            finally:
+                store.close()
+            if deleted is None:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "这条 Trace 已不存在。"})
+                return
+            note = "已删除这条 Trace 及其候选分析。"
+            if deleted["proposal_status"] == "accepted":
+                note += " 已确认的历史模型版本会保留，不会自动回滚。"
+            self._json(HTTPStatus.OK, {"message": note})
+        except (ValueError, json.JSONDecodeError) as error:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+        except Exception as error:
             self._json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
 
 
