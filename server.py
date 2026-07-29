@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from heka.db import HekaStore
 from heka.deepseek import answer_question, load_dotenv, propose_action_experiments
-from heka.local import analyse_record, guide_trace, propose_initial_model
+from heka.local import analyse_record, guide_trace, install_local_model, local_model_status, propose_initial_model
 from heka.obsidian import import_daily_records
 from heka.schema import apply_confirmed_proposal, apply_initial_model_seed
 
@@ -73,6 +73,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/runtime":
             self._json(HTTPStatus.OK, {"local_model": os.getenv("OLLAMA_MODEL", "qwen3:4b"), "cloud_model": os.getenv("HEKA_MODEL", "deepseek-chat")})
+            return
+        if path == "/api/local-model/status":
+            self._json(HTTPStatus.OK, local_model_status())
             return
         if path == "/api/evolution":
             store = self._store()
@@ -148,6 +151,9 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 if len(transcript) < 2:
                     raise ValueError("先写下一点真实发生的事，Heka 才能追问。")
                 self._json(HTTPStatus.OK, guide_trace(transcript))
+                return
+            if path == "/api/local-model/install":
+                self._json(HTTPStatus.OK, install_local_model())
                 return
             if path == "/api/model/bootstrap":
                 store = self._store()

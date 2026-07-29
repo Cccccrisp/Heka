@@ -2,12 +2,36 @@ const $ = (selector) => document.querySelector(selector);
 const today = new Date().toISOString().slice(0, 10);
 const transcript = [];
 let hasGuide = false;
+let localOrganizerReady = false;
 
 async function api(url, options) {
   const response = await fetch(url, options);
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) throw new Error("当前页面没有连接到 Heka 后台。请从 Heka 应用中重新打开。 ");
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "请求没有完成。");
   return body;
+}
+
+function setTraceAvailability(ready) {
+  localOrganizerReady = ready;
+  $("#trace-input").disabled = !ready;
+  $("#record-trace").disabled = !ready;
+}
+
+async function refreshLocalOrganizer() {
+  const setup = $("#local-model-setup"); const title = $("#local-model-title"); const message = $("#local-model-message"); const actions = $("#local-model-actions");
+  const status = await api("/api/v1/local-model/status");
+  if (status.state === "ready") { setup.hidden = true; setTraceAvailability(true); return; }
+  setTraceAvailability(false); setup.hidden = false; message.textContent = status.message; actions.innerHTML = "";
+  if (status.state === "ollama_unavailable") {
+    title.textContent = "先准备本地整理器";
+    const link = document.createElement("a"); link.className = "primary setup-link"; link.href = "https://ollama.com/download"; link.target = "_blank"; link.rel = "noreferrer"; link.textContent = "安装 Ollama ↗"; actions.append(link);
+    const retry = document.createElement("button"); retry.className = "quiet"; retry.textContent = "我已打开 Ollama，重新检查"; retry.onclick = () => refreshLocalOrganizer().catch((error) => { message.textContent = error.message; }); actions.append(retry);
+  } else {
+    title.textContent = `下载 ${status.model}`;
+    const install = document.createElement("button"); install.className = "primary"; install.textContent = "下载本地模型"; install.onclick = async () => { install.disabled = true; message.textContent = "正在下载本地模型；这可能需要几分钟。"; try { const result = await api("/api/v1/local-model/install", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); message.textContent = result.message; await refreshLocalOrganizer(); } catch (error) { message.textContent = error.message; install.disabled = false; } }; actions.append(install);
+  }
 }
 
 function addMessage(role, text) {
@@ -51,6 +75,7 @@ async function saveTrace() {
 }
 
 $("#record-trace").onclick = async () => {
+  if (!localOrganizerReady) return;
   const input = $("#trace-input"); const text = input.value.trim(); const feedback = $("#trace-feedback");
   if (text) { transcript.push({role:"user", text}); addMessage("user", text); input.value = ""; try { await requestGuide(); } catch (error) { feedback.textContent = error.message; } return; }
   if (hasGuide && transcript.some((turn) => turn.role === "user")) { try { await saveTrace(); } catch (error) { feedback.textContent = error.message; } return; }
@@ -63,4 +88,4 @@ async function showToday() {
   $("#today-traces").innerHTML = traces.length ? traces.map((item) => { const facts=(item.trace.observable_facts||[]).map((fact)=>fact.statement).join("；"); const tags=(item.trace.tags||[]).join(" · "); return `<article class="today-trace"><p class="day-trace-meta">${item.created_at.slice(11,16)} · ${tags || item.trace.event_type}</p><p>${facts || item.raw_text}</p><span>${item.proposal_status === "accepted" ? "已纳入模型" : "等待你的审阅"}</span></article>`; }).join("") : '<p class="empty">还没有记录。左侧写下今天发生的事。</p>';
 }
 
-Promise.all([api("/api/v1/runtime"), showToday()]).then(([runtime]) => { $("#runtime").textContent = `本地 Trace 引导 · ${runtime.local_model}`; }).catch((error) => { $("#runtime").textContent = error.message; });
+Promise.all([api("/api/v1/runtime"), showToday(), refreshLocalOrganizer()]).then(([runtime]) => { $("#runtime").textContent = `本地 Trace 引导 · ${runtime.local_model}`; }).catch((error) => { $("#runtime").textContent = error.message; setTraceAvailability(false); });

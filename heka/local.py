@@ -84,6 +84,50 @@ def _ollama_chat(messages: list[dict], *, timeout: int = 180) -> tuple[str, str]
     return content, f"ollama:{model}"
 
 
+def local_model_status() -> dict:
+    """Describe whether the configured local organizer can accept Trace work."""
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+    request = Request(base_url + "/api/tags", method="GET")
+    try:
+        with urlopen(request, timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return {
+            "state": "ollama_unavailable",
+            "model": model,
+            "message": "本地整理器尚未运行。先安装并打开 Ollama，Heka 才会在你的设备上整理 Trace。",
+        }
+    names = {str(item.get("name", "")) for item in payload.get("models", []) if isinstance(item, dict)}
+    if model not in names and not any(name.split(":", 1)[0] == model.split(":", 1)[0] for name in names):
+        return {
+            "state": "model_missing",
+            "model": model,
+            "message": f"Ollama 已准备好，但还没有下载 {model}。",
+        }
+    return {"state": "ready", "model": model, "message": "本地整理器已准备好。"}
+
+
+def install_local_model() -> dict:
+    """Download the configured model through the local Ollama service after user request."""
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+    request = Request(
+        base_url + "/api/pull",
+        data=json.dumps({"name": model, "stream": False}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=1800) as response:
+            response.read()
+    except HTTPError as error:
+        raise RuntimeError(f"本地模型下载失败：{error.read().decode('utf-8', 'replace')}") from error
+    except URLError as error:
+        raise RuntimeError("还没有检测到 Ollama。请先安装并打开 Ollama，再回来下载模型。") from error
+    return {"state": "ready", "model": model, "message": f"{model} 已下载完成，现在可以记录 Trace。"}
+
+
 def guide_trace(transcript: str) -> dict:
     """Ask one bounded local follow-up before a Trace is committed."""
     content, _ = _ollama_chat([
