@@ -104,14 +104,52 @@ Question policy is strict: do not ask questions by default. Ask at most ONE conc
             messages.append({"role":"tool","tool_call_id":call.get("id", ""),"content":json.dumps(result, ensure_ascii=False)})
     raise RuntimeError("云端推理调用工具次数过多，请换一种问法。")
 
+def _fallback_trace_readiness(history: list[dict]) -> dict:
+    """A conservative local fallback when a second cloud request is unavailable.
+
+    The conversation itself has already been saved and answered by the cloud. This
+    prevents a transient JSON-mode failure from turning a successful conversation
+    into a failed one. It only unlocks a *candidate* Trace, which still requires
+    the user's review before it can affect the model.
+    """
+    user_text = "\n".join(str(item.get("content") or "") for item in history if item.get("role") == "user").strip()
+    concrete_cues = ("决定", "选择", "做了", "没有", "完成", "开始", "停止", "拒绝", "接受", "发生", "因为", "所以", "今天", "昨天")
+    ready = len(user_text) >= 28 and any(cue in user_text for cue in concrete_cues)
+    if ready:
+        return {"ready": True, "reason": "这段对话已包含一个具体选择或经历，可先形成候选 Trace 并在审阅页确认。", "next_question": ""}
+    return {"ready": False, "reason": "还需要一件具体发生的事，或你最后做出的选择。", "next_question": "这件事最后你做了什么选择，主要因为什么？"}
+
+
+def _read_json_object(content: object) -> dict:
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text[:-3]
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("Cloud readiness response did not contain a JSON object.")
+    value = json.loads(text[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("Cloud readiness response was not an object.")
+    return value
+
+
 def assess_trace_readiness(history: list[dict]) -> dict:
-    """The cloud, not a turn counter, decides whether a Trace can be proposed."""
-    prompt = '''判断这段 Heka 对话是否已经足够形成一条“待审阅 Trace 候选”。只有当用户自己的表达中至少有一个可核验事实，并且事件语境或关键原因已足够清楚时，ready 才能为 true。不要把聊天中的抽象观点或助手推测当作事实。若不够，next_question 必须是唯一最能补齐信息的问题。返回 JSON：{"ready":false,"reason":"...","next_question":"..."}'''
+    """Ask the cloud for a bounded Trace decision, with a safe local fallback."""
+    prompt = '''判断这段 Heka 对话是否已经足够形成一条“待审阅 Trace 候选”。只以用户自己的表达为准，不把助手的推测当作事实。
+
+判断标准：用户已经说清“发生或选择了什么”以及“一个关键原因或语境”时，就应 ready=true。例如“我决定继续做 Heka，因为想先验证个人模型是否有价值”已经足够形成候选 Trace；不要要求用户解释项目定义、补充时间地点、数据，或进行泛泛自我反思。候选 Trace 仍须用户审阅，ready=true 不代表永久模型结论。
+
+只有在没有具体经历、选择或关键原因时才 ready=false。此时 next_question 只能问一个最必要的问题。返回 JSON：{"ready":false,"reason":"...","next_question":"..."}'''
     body={"model":os.getenv("HEKA_MODEL","deepseek-chat"),"messages":[{"role":"system","content":prompt}]+[{"role":item["role"],"content":item["content"]} for item in history[-16:]],"response_format":{"type":"json_object"},"temperature":0.15,"max_tokens":300}
     request=Request(cloud_endpoint(),data=json.dumps(body).encode("utf-8"),headers={"Authorization":f"Bearer {cloud_key()}","Content-Type":"application/json"},method="POST")
     try:
-        with urlopen(request,timeout=60) as response: result=json.loads(json.loads(response.read().decode("utf-8")).get("choices",[{}])[0].get("message",{}).get("content") or "{}")
-    except (HTTPError, URLError, json.JSONDecodeError) as error: raise RuntimeError("云端无法判断这段对话是否可形成 Trace。") from error
+        with urlopen(request,timeout=60) as response:
+            payload=json.loads(response.read().decode("utf-8"))
+        result=_read_json_object(payload.get("choices", [{}])[0].get("message", {}).get("content"))
+    except (HTTPError, URLError, json.JSONDecodeError, IndexError, KeyError, TypeError, ValueError):
+        return _fallback_trace_readiness(history)
     return {"ready":result.get("ready") is True,"reason":str(result.get("reason") or "需要更多可核验信息。"),"next_question":str(result.get("next_question") or "")}
 
 def propose_initial_model_cloud(evidence: list[dict], self_report: dict) -> dict:
