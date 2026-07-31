@@ -1,9 +1,9 @@
 const q = (selector) => document.querySelector(selector);
-async function request(url, options) { const response = await fetch(url, options); const body = await response.json(); if (!response.ok) throw Error(body.error || "请求失败。"); return body; }
+async function request(url, options) { let response; try { response = await fetch(url, options); } catch (_) { throw Error("无法连接到 Heka 本地服务。请从 Heka 应用中重新打开。"); } const body = await response.json(); if (!response.ok) throw Error(body.error || "请求失败。"); return body; }
 async function load() {
   const proposals = await request('/api/v1/pending'); q('#proposal-count').textContent = proposals.length; const list = q('#pending-list'); list.innerHTML = '';
-  if (!proposals.length) { list.innerHTML = '<p class="empty">没有待审阅的提案。</p>'; return; }
+  if (!proposals.length) { list.innerHTML = '<p class="empty">暂时没有需要判断的 Trace。新的候选会在对话足够具体后出现在这里。</p>'; return; }
   proposals.forEach((item) => { const node = q('#proposal-template').content.cloneNode(true); node.querySelector('.proposal-record').textContent = item.source_title ? `来自资料 · ${item.source_title}` : item.raw_text.slice(0, 140); node.querySelector('.facts').textContent = item.trace.observable_facts.map((fact) => fact.statement).join('；'); node.querySelector('.interpretations').textContent = item.trace.candidate_interpretations.map((interpretation) => interpretation.statement).join('；'); node.querySelector('.proposal-reason').textContent = item.payload.reason; node.querySelector('.accept').onclick = () => review(item.id, 'accept'); node.querySelector('.reject').onclick = () => review(item.id, 'reject'); list.append(node); });
 }
-async function review(id, decision) { await request(`/api/v1/proposals/${id}/review`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({decision})}); load(); }
-load();
+async function review(id, decision) { const buttons = [...document.querySelectorAll('.proposal-actions button')]; buttons.forEach((button) => button.disabled = true); try { await request(`/api/v1/proposals/${id}/review`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({decision})}); await load(); } catch (error) { const list = q('#pending-list'); list.insertAdjacentHTML('afterbegin', `<p class="inline-error">${error.message}</p>`); buttons.forEach((button) => button.disabled = false); } }
+load().catch((error) => { q('#pending-list').innerHTML = `<p class="inline-error">${error.message}</p>`; });
