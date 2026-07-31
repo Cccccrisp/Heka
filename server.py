@@ -134,6 +134,14 @@ class HekaHandler(SimpleHTTPRequestHandler):
             finally:
                 store.close()
             return
+        if path == "/api/model/validity":
+            store = self._store()
+            try:
+                store.sync_claims_from_model(store.current_model())
+                self._json(HTTPStatus.OK, store.model_validity())
+            finally:
+                store.close()
+            return
         if path == "/api/pending":
             store = self._store()
             try:
@@ -312,6 +320,7 @@ class HekaHandler(SimpleHTTPRequestHandler):
                 try:
                     model = apply_initial_model_seed(store.current_model(), seed)
                     store.add_model_snapshot(model, None)
+                    store.sync_claims_from_model(model)
                     self._json(HTTPStatus.OK, {"model": model, "message": "已将这周的模型起点写入本地版本历史。"})
                 finally:
                     store.close()
@@ -365,6 +374,56 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     self._json(HTTPStatus.CREATED, {"case_id":case_id,"plan":plan})
                 finally: store.close()
                 return
+            if path == "/api/predictions":
+                statement = str(body.get("statement", "")).strip()
+                scope = str(body.get("scope", "")).strip()
+                probability = float(body.get("probability", 0))
+                due_date = str(body.get("due_date", "")).strip()
+                if len(statement) < 8:
+                    raise ValueError("请写下一个具体、可在未来核对的预测。")
+                store = self._store()
+                try:
+                    prediction = store.create_prediction(statement, scope or "当前情境", probability, due_date, body.get("claim_id"))
+                    self._json(HTTPStatus.CREATED, {"prediction": prediction})
+                finally:
+                    store.close()
+                return
+            if path.startswith("/api/predictions/") and path.endswith("/review"):
+                prediction_id = int(path.split("/")[3])
+                outcome = body.get("outcome")
+                if not isinstance(outcome, bool):
+                    raise ValueError("请确认预测是否发生。")
+                store = self._store()
+                try:
+                    prediction = store.review_prediction(prediction_id, outcome, str(body.get("note", "")))
+                    if prediction is None:
+                        self._json(HTTPStatus.NOT_FOUND, {"error": "没有找到待验证的预测。"})
+                    else:
+                        self._json(HTTPStatus.OK, {"prediction": prediction, "message": "已记录结果；它会进入预测准确度，而不是直接改变模型。"})
+                finally:
+                    store.close()
+                return
+            if path.startswith("/api/model/claims/") and path.endswith("/resonance"):
+                claim_id = int(path.split("/")[4])
+                store = self._store()
+                try:
+                    claim = store.rate_claim_resonance(claim_id, int(body.get("resonance", 0)))
+                    if claim is None:
+                        self._json(HTTPStatus.NOT_FOUND, {"error": "没有找到这个模型判断。"})
+                    else:
+                        self._json(HTTPStatus.OK, {"claim": claim})
+                finally:
+                    store.close()
+                return
+            if path.startswith("/api/facts/") and path.endswith("/review"):
+                fact_id = int(path.split("/")[3])
+                store = self._store()
+                try:
+                    store.review_fact(fact_id, str(body.get("status", "")), str(body.get("note", "")))
+                    self._json(HTTPStatus.OK, {"message": "已记录事实校对。"})
+                finally:
+                    store.close()
+                return
             if path.startswith("/api/actions/") and path.endswith("/select"):
                 case_id = int(path.split("/")[3]); option_index=int(body.get("option_index", -1))
                 if option_index not in {0,1,2}: raise ValueError("请选择一个方案。")
@@ -384,6 +443,18 @@ class HekaHandler(SimpleHTTPRequestHandler):
                     if case is None:self._json(HTTPStatus.NOT_FOUND,{"error":"没有找到待复盘的行动方案。"})
                     else:self._json(HTTPStatus.OK,{"case":case,"message":"已记录结果。下一次模型更新仍需单独审阅。"})
                 finally:store.close()
+                return
+            if path.startswith("/api/actions/") and path.endswith("/helpfulness"):
+                case_id = int(path.split("/")[3])
+                store = self._store()
+                try:
+                    case = store.rate_action_case(case_id, int(body.get("helpfulness", 0)))
+                    if case is None:
+                        self._json(HTTPStatus.NOT_FOUND, {"error": "没有找到已复盘的行动方案。"})
+                    else:
+                        self._json(HTTPStatus.OK, {"case": case})
+                finally:
+                    store.close()
                 return
             if path == "/api/evolution/review":
                 days = int(body.get("days", 90))
@@ -422,6 +493,7 @@ class HekaHandler(SimpleHTTPRequestHandler):
                         model = apply_confirmed_proposal(store.current_model(), proposal["payload"])
                         store.add_model_snapshot(model, proposal_id)
                         store.set_proposal_status(proposal_id, "accepted")
+                        store.sync_claims_from_model(model)
                         self._json(HTTPStatus.OK, {"message": "已写入新的模型版本。", "model": model})
                     else:
                         store.set_proposal_status(proposal_id, "rejected")

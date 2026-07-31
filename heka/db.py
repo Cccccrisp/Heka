@@ -156,6 +156,53 @@ class HekaStore:
                 result_note TEXT,
                 reviewed_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS model_claims (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                claim_key TEXT NOT NULL UNIQUE,
+                statement TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                source_dimension TEXT,
+                status TEXT NOT NULL CHECK(status IN ('hypothesis', 'confirmed', 'rejected')),
+                confirmation TEXT NOT NULL CHECK(confirmation IN ('pending', 'confirmed', 'corrected')),
+                evidence_count INTEGER NOT NULL DEFAULT 0,
+                counter_evidence_count INTEGER NOT NULL DEFAULT 0,
+                source_diversity INTEGER NOT NULL DEFAULT 0,
+                recency_score REAL NOT NULL DEFAULT 0,
+                confidence REAL NOT NULL DEFAULT 0,
+                resonance INTEGER CHECK(resonance BETWEEN 1 AND 5),
+                next_validation TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS model_claim_evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                claim_id INTEGER NOT NULL REFERENCES model_claims(id),
+                trace_id INTEGER REFERENCES traces(id),
+                stance TEXT NOT NULL CHECK(stance IN ('support', 'counter')),
+                evidence_type TEXT NOT NULL CHECK(evidence_type IN ('self_report', 'decision', 'action', 'outcome', 'user_feedback')),
+                quote TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS fact_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trace_fact_id INTEGER NOT NULL UNIQUE REFERENCES trace_facts(id),
+                status TEXT NOT NULL CHECK(status IN ('confirmed', 'corrected')),
+                note TEXT NOT NULL DEFAULT '',
+                reviewed_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS prediction_cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                claim_id INTEGER REFERENCES model_claims(id),
+                statement TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                probability REAL NOT NULL CHECK(probability >= 0 AND probability <= 1),
+                due_date TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending', 'verified', 'dismissed')),
+                outcome INTEGER CHECK(outcome IN (0, 1)),
+                outcome_note TEXT,
+                reviewed_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, title TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS conversation_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES conversations(id), created_at TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('user','assistant')), content TEXT NOT NULL, tool_context TEXT NOT NULL DEFAULT '[]');
             CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, title TEXT NOT NULL, purpose TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')));
@@ -170,6 +217,13 @@ class HekaStore:
         conversation_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(conversations)")}
         if "project_id" not in conversation_columns:
             self.connection.execute("ALTER TABLE conversations ADD COLUMN project_id INTEGER REFERENCES projects(id)")
+        action_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(action_cases)")}
+        if "helpfulness" not in action_columns:
+            self.connection.execute("ALTER TABLE action_cases ADD COLUMN helpfulness INTEGER CHECK(helpfulness BETWEEN 1 AND 5)")
+        if "expected_signal" not in action_columns:
+            self.connection.execute("ALTER TABLE action_cases ADD COLUMN expected_signal TEXT NOT NULL DEFAULT ''")
+        if "follow_up_date" not in action_columns:
+            self.connection.execute("ALTER TABLE action_cases ADD COLUMN follow_up_date TEXT")
         self.connection.execute(
             """UPDATE source_documents SET record_kind='research'
                WHERE title LIKE 'Day 3%' OR title LIKE 'Day 4%' OR title LIKE 'Day 5%' OR title LIKE '2026-07-24%'"""
@@ -329,6 +383,159 @@ class HekaStore:
         self.connection.execute("UPDATE action_cases SET status='reviewed', result_note=?, reviewed_at=? WHERE id=? AND status='selected'", (result_note, utc_now(), case_id))
         self.connection.commit()
         return next((case for case in self.action_cases() if case["id"] == case_id), None)
+
+    def rate_action_case(self, case_id: int, helpfulness: int) -> dict[str, Any] | None:
+        if helpfulness not in {1, 2, 3, 4, 5}:
+            raise ValueError("行动帮助度需要在 1 到 5 之间。")
+        self.connection.execute(
+            "UPDATE action_cases SET helpfulness=? WHERE id=? AND status='reviewed'", (helpfulness, case_id)
+        )
+        self.connection.commit()
+        return next((case for case in self.action_cases() if case["id"] == case_id), None)
+
+    @staticmethod
+    def _claim_confidence(evidence_count: int, counter_count: int, source_diversity: int, recency_score: float, confirmation: str) -> float:
+        """A transparent confidence heuristic, not a personality measurement."""
+        support = min(1.0, evidence_count / 6)
+        diversity = min(1.0, source_diversity / 3)
+        confirmation_weight = {"pending": 0.4, "confirmed": 0.85, "corrected": 1.0}[confirmation]
+        contradiction = min(0.6, counter_count / (evidence_count + counter_count + 1))
+        return round((0.35 * support + 0.20 * diversity + 0.20 * recency_score + 0.25 * confirmation_weight) * (1 - 0.5 * contradiction), 3)
+
+    def record_claim(
+        self, claim_key: str, statement: str, scope: str, evidence: list[str], *, source_dimension: str | None = None,
+        trace_id: int | None = None, status: str = "confirmed", confirmation: str = "confirmed", next_validation: str = ""
+    ) -> None:
+        """Upsert one reviewable claim. It only records user-confirmed model writes."""
+        now = utc_now()
+        existing = self.connection.execute("SELECT id FROM model_claims WHERE claim_key=?", (claim_key,)).fetchone()
+        if existing:
+            claim_id = int(existing["id"])
+            self.connection.execute(
+                "UPDATE model_claims SET statement=?, scope=?, status=?, confirmation=?, next_validation=?, updated_at=? WHERE id=?",
+                (statement, scope, status, confirmation, next_validation, now, claim_id),
+            )
+        else:
+            claim_id = int(self.connection.execute(
+                """INSERT INTO model_claims(claim_key, statement, scope, source_dimension, status, confirmation, next_validation, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (claim_key, statement, scope, source_dimension, status, confirmation, next_validation, now, now),
+            ).lastrowid)
+        already = self.connection.execute("SELECT count(*) FROM model_claim_evidence WHERE claim_id=? AND stance='support'", (claim_id,)).fetchone()[0]
+        if not already:
+            self.connection.executemany(
+                "INSERT INTO model_claim_evidence(claim_id, trace_id, stance, evidence_type, quote, created_at) VALUES (?, ?, 'support', 'user_feedback', ?, ?)",
+                [(claim_id, trace_id, item[:500], now) for item in evidence[:12]],
+            )
+        self._refresh_claim(claim_id)
+        self.connection.commit()
+
+    def _refresh_claim(self, claim_id: int) -> None:
+        row = self.connection.execute("SELECT confirmation, created_at FROM model_claims WHERE id=?", (claim_id,)).fetchone()
+        if row is None:
+            return
+        counts = self.connection.execute(
+            """SELECT stance, count(*) AS n, count(DISTINCT trace_id) AS traces
+               FROM model_claim_evidence WHERE claim_id=? GROUP BY stance""", (claim_id,)
+        ).fetchall()
+        grouped = {item["stance"]: item for item in counts}
+        evidence_count = int(grouped.get("support", {"n": 0})["n"])
+        counter_count = int(grouped.get("counter", {"n": 0})["n"])
+        source_diversity = max(1 if evidence_count else 0, int(grouped.get("support", {"traces": 0})["traces"]))
+        created = datetime.fromisoformat(row["created_at"])
+        age_days = max(0, (datetime.now(timezone.utc) - created).days)
+        recency_score = round(2.718281828 ** (-age_days / 90), 3)
+        confidence = self._claim_confidence(evidence_count, counter_count, source_diversity, recency_score, row["confirmation"])
+        self.connection.execute(
+            "UPDATE model_claims SET evidence_count=?, counter_evidence_count=?, source_diversity=?, recency_score=?, confidence=?, updated_at=? WHERE id=?",
+            (evidence_count, counter_count, source_diversity, recency_score, confidence, utc_now(), claim_id),
+        )
+
+    def sync_claims_from_model(self, model: dict[str, Any]) -> None:
+        """Backfill claims for initial-seed dimensions without reinterpreting old Trace."""
+        for name, item in model.get("confirmed_dimensions", {}).items():
+            self.record_claim(
+                f"dimension:{name}", f"当前对「{name.replace('_', ' · ')}」的工作判断", item.get("scope", "已确认模型范围"),
+                list(item.get("evidence", [])), source_dimension=name,
+            )
+        for index, item in enumerate(model.get("hypotheses", [])):
+            self.record_claim(
+                f"hypothesis:{index}:{item.get('statement', '')[:60]}", item.get("statement", "待验证的理解"), item.get("scope", "当前记录范围"),
+                list(item.get("evidence", [])), status="hypothesis", confirmation="pending", next_validation=item.get("next_validation", ""),
+            )
+
+    def model_claims(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute("SELECT * FROM model_claims WHERE status != 'rejected' ORDER BY confidence DESC, id DESC").fetchall()
+        return [dict(row) for row in rows]
+
+    def rate_claim_resonance(self, claim_id: int, resonance: int) -> dict[str, Any] | None:
+        if resonance not in {1, 2, 3, 4, 5}:
+            raise ValueError("相似度需要在 1 到 5 之间。")
+        self.connection.execute("UPDATE model_claims SET resonance=?, updated_at=? WHERE id=?", (resonance, utc_now(), claim_id))
+        self.connection.commit()
+        row = self.connection.execute("SELECT * FROM model_claims WHERE id=?", (claim_id,)).fetchone()
+        return None if row is None else dict(row)
+
+    def create_prediction(self, statement: str, scope: str, probability: float, due_date: str, claim_id: int | None = None) -> dict[str, Any]:
+        try:
+            datetime.strptime(due_date, "%Y-%m-%d")
+        except ValueError as error:
+            raise ValueError("验证日期格式应为 YYYY-MM-DD。") from error
+        if not 0.05 <= probability <= 0.95:
+            raise ValueError("预测把握请设置在 5% 到 95% 之间。")
+        cursor = self.connection.execute(
+            """INSERT INTO prediction_cases(created_at, claim_id, statement, scope, probability, due_date, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'pending')""",
+            (utc_now(), claim_id, statement.strip()[:500], scope.strip()[:300], probability, due_date),
+        )
+        self.connection.commit()
+        return self.prediction(int(cursor.lastrowid)) or {}
+
+    def prediction(self, prediction_id: int) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT * FROM prediction_cases WHERE id=?", (prediction_id,)).fetchone()
+        return None if row is None else dict(row)
+
+    def predictions(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute("SELECT * FROM prediction_cases ORDER BY due_date, id DESC").fetchall()
+        return [dict(row) for row in rows]
+
+    def review_prediction(self, prediction_id: int, outcome: bool, note: str) -> dict[str, Any] | None:
+        self.connection.execute(
+            """UPDATE prediction_cases SET status='verified', outcome=?, outcome_note=?, reviewed_at=?
+               WHERE id=? AND status='pending'""", (int(outcome), note.strip()[:1000], utc_now(), prediction_id)
+        )
+        self.connection.commit()
+        return self.prediction(prediction_id)
+
+    def review_fact(self, fact_id: int, status: str, note: str = "") -> None:
+        if status not in {"confirmed", "corrected"}:
+            raise ValueError("事实审阅只能为 confirmed 或 corrected。")
+        self.connection.execute(
+            """INSERT INTO fact_reviews(trace_fact_id, status, note, reviewed_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(trace_fact_id) DO UPDATE SET status=excluded.status, note=excluded.note, reviewed_at=excluded.reviewed_at""",
+            (fact_id, status, note.strip()[:1000], utc_now()),
+        )
+        self.connection.commit()
+
+    def model_validity(self) -> dict[str, Any]:
+        claims = self.model_claims()
+        fact = self.connection.execute("SELECT count(*) AS n, sum(status='confirmed') AS correct FROM fact_reviews").fetchone()
+        reviewed_predictions = self.connection.execute("SELECT count(*) AS n, sum(outcome=1) AS correct FROM prediction_cases WHERE status='verified'").fetchone()
+        reviewed_actions = self.connection.execute("SELECT count(*) AS n, avg(helpfulness) AS average FROM action_cases WHERE status='reviewed' AND helpfulness IS NOT NULL").fetchone()
+        ratings = [item["resonance"] for item in claims if item["resonance"] is not None]
+        return {
+            "label": f"Hypothesis Model v{self.current_model().get('version', 0)}",
+            "disclaimer": "这是基于有限记录、可被反证的工作假设；它不是完整人格，也不自动替你下结论。",
+            "claims": claims,
+            "metrics": {
+                "fact": {"reviewed": int(fact["n"] or 0), "correct": int(fact["correct"] or 0)},
+                "pattern": {"rated": len(ratings), "average": round(sum(ratings) / len(ratings), 1) if ratings else None},
+                "prediction": {"reviewed": int(reviewed_predictions["n"] or 0), "correct": int(reviewed_predictions["correct"] or 0)},
+                "intervention": {"reviewed": int(reviewed_actions["n"] or 0), "average": round(float(reviewed_actions["average"]), 1) if reviewed_actions["average"] is not None else None},
+            },
+            "predictions": self.predictions(),
+            "actions": self.action_cases(),
+        }
 
     def proposal(self, proposal_id: int) -> dict[str, Any] | None:
         row = self.connection.execute("SELECT * FROM proposals WHERE id=?", (proposal_id,)).fetchone()

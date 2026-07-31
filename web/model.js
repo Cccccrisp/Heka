@@ -37,6 +37,40 @@ function renderModel(model) {
 }
 
 function renderEvolution(events) { q("#evolution-list").innerHTML = events.length ? events.map((item) => `<article class="evolution-event"><p>${displayName(item.dimension)}：${Math.round(item.delta * 100)}%</p><p class="evolution-detail">依据 ${item.evidence.length} 条已确认案例 · ${item.scope}</p></article>`).join("") : '<p class="empty">还没有足够的跨时间证据。</p>'; }
+function metric(label, value, detail) { return `<article class="validity-metric"><span>${label}</span><b>${value}</b><small>${detail}</small></article>`; }
+function escapeHtml(text) { const node = document.createElement("span"); node.textContent = String(text || ""); return node.innerHTML; }
+function renderValidity(validity) {
+  q("#validity-title").textContent = validity.label || "Hypothesis Model";
+  q("#validity-disclaimer").textContent = validity.disclaimer || "当前模型仍等待更多证据。";
+  const metrics = validity.metrics || {};
+  const fact = metrics.fact || {}; const pattern = metrics.pattern || {}; const prediction = metrics.prediction || {}; const intervention = metrics.intervention || {};
+  q("#validity-metrics").innerHTML = [
+    metric("事实准确度", fact.reviewed ? `${fact.correct}/${fact.reviewed}` : "尚无样本", fact.reviewed ? "你已校对的事实" : "先审阅一条 Trace 的事实"),
+    metric("模式贴合度", pattern.rated ? `${pattern.average}/5` : "待评分", pattern.rated ? `${pattern.rated} 条主张由你评分` : "由你判断“像不像我”"),
+    metric("预测准确度", prediction.reviewed ? `${prediction.correct}/${prediction.reviewed}` : "尚无到期预测", prediction.reviewed ? "已到期并回看的预测" : "先留下一条未来预测"),
+    metric("行动帮助度", intervention.reviewed ? `${intervention.average}/5` : "尚无回访", intervention.reviewed ? `${intervention.reviewed} 个行动已回访` : "行动后再由你回访"),
+  ].join("");
+  const claims = validity.claims || [];
+  q("#claims-list").innerHTML = claims.length ? claims.map((claim) => {
+    const confirmation = claim.confirmation === "confirmed" ? "已由你确认" : "等待确认";
+    const counter = claim.counter_evidence_count ? `<span class="counter">${claim.counter_evidence_count} 条反证</span>` : `<span>尚未出现反证</span>`;
+    const active = claim.resonance ? `active` : "";
+    return `<article class="claim-card"><div><h3>${escapeHtml(claim.statement)}</h3><p class="claim-scope">适用范围：${escapeHtml(claim.scope)}</p></div><div class="claim-confidence"><b>${Math.round(Number(claim.confidence || 0) * 100)}%</b><span>当前置信度 · ${confirmation}</span></div><div class="claim-evidence"><span>${claim.evidence_count} 条支持证据</span><span>${claim.source_diversity} 个独立 Trace</span>${counter}</div><div class="resonance"><span>这条描述像你吗？</span>${[1,2,3,4,5].map((value) => `<button class="${claim.resonance === value ? active : ""}" data-resonance="${value}" data-claim-id="${claim.id}" title="${value}/5">${value}</button>`).join("")}<span>${claim.resonance ? `已评 ${claim.resonance}/5` : "尚未评分"}</span></div></article>`;
+  }).join("") : '<p class="empty">当前还没有已确认的模型主张。先审阅并确认一条 Trace，而不是急着建立人格结论。</p>';
+  q("#claims-list").querySelectorAll("[data-resonance]").forEach((button) => button.onclick = async () => {
+    try { await request(`/api/v1/model/claims/${button.dataset.claimId}/resonance`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({resonance:Number(button.dataset.resonance)})}); await refresh(); } catch (error) { alert(error.message); }
+  });
+  const predictions = validity.predictions || [];
+  q("#prediction-list").innerHTML = predictions.length ? predictions.map((item) => `<article class="case-card"><span class="case-status">${item.status === "pending" ? "WAITING FOR REALITY" : "REVIEWED"}</span><b>${escapeHtml(item.statement)}</b><p>${escapeHtml(item.scope)} · 当前把握 ${Math.round(item.probability * 100)}% · ${item.due_date}</p>${item.status === "pending" ? `<div class="case-actions"><button data-prediction-yes="${item.id}">发生了</button><button data-prediction-no="${item.id}">没有发生</button></div>` : `<p>结果：${item.outcome ? "发生" : "没有发生"}${item.outcome_note ? ` · ${escapeHtml(item.outcome_note)}` : ""}</p>`}</article>`).join("") : '<p class="empty">还没有预测。只写下你愿意在未来核对的判断。</p>';
+  q("#prediction-list").querySelectorAll("[data-prediction-yes],[data-prediction-no]").forEach((button) => button.onclick = () => reviewPrediction(button.dataset.predictionYes || button.dataset.predictionNo, Boolean(button.dataset.predictionYes)));
+  const actions = validity.actions || [];
+  q("#action-list").innerHTML = actions.length ? actions.slice(0, 4).map((item) => {
+    const option = item.selected_option !== null && item.plan && item.plan.options ? item.plan.options[item.selected_option] : null;
+    return `<article class="case-card"><span class="case-status">${item.status === "reviewed" ? "REVIEWED" : item.status === "selected" ? "IN PROGRESS" : "PROPOSED"}</span><b>${escapeHtml(item.problem)}</b><p>${option ? `已选：${escapeHtml(option.title)}` : "尚未选择行动方案"}</p>${item.status === "reviewed" ? `<div class="case-actions">${[1,2,3,4,5].map((value) => `<button data-helpfulness="${value}" data-action-id="${item.id}">${value}/5</button>`).join("")}</div><p>${item.helpfulness ? `你给出的帮助度：${item.helpfulness}/5` : "请给这次行动的帮助度评分"}</p>` : ""}</article>`;
+  }).join("") : '<p class="empty">行动方案会在你确认问题后出现；Heka 不会凭空干预你。</p>';
+  q("#action-list").querySelectorAll("[data-helpfulness]").forEach((button) => button.onclick = async () => { try { await request(`/api/v1/actions/${button.dataset.actionId}/helpfulness`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({helpfulness:Number(button.dataset.helpfulness)})}); await refresh(); } catch (error) { alert(error.message); } });
+}
+async function reviewPrediction(id, outcome) { const note = window.prompt("现实中实际发生了什么？可留空，但请尽量写下支持或推翻它的事实。") ?? ""; try { await request(`/api/v1/predictions/${id}/review`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({outcome, note})}); await refresh(); } catch (error) { alert(error.message); } }
 function setPhase(report, model) {
   const confirmed = Number(model.version || 0) > 0; const hasReport = Boolean(report);
   q("#onboarding-panel").hidden = hasReport; q("#migration-panel").hidden = !hasReport || confirmed; q("#model-dashboard").hidden = !confirmed;
@@ -44,9 +78,12 @@ function setPhase(report, model) {
   if (!confirmed) { q("#model-kicker").textContent = "03 / REVIEW A STARTING POINT"; q("#model-title").textContent = "现在把材料变成候选起点。"; q("#model-description").textContent = "生成的只是受范围限制的工作假设。你审阅并确认后，Heka 才会建立第一个模型版本。"; q("#model-runtime").textContent = "第 2 步 / 审阅候选起点"; return; }
   q("#model-kicker").textContent = "03 / CONFIRMED WORKING MODEL"; q("#model-title").textContent = "这是你当前确认过的理解。"; q("#model-description").textContent = "它不是人格结论，而是一组有证据、范围和反证条件的工作假设。"; q("#model-runtime").textContent = `当前版本 V${model.version} · 等待新证据`; }
 
-async function refresh() { const [model, events, report] = await Promise.all([request("/api/v1/model"), request("/api/v1/evolution"), request("/api/v1/onboarding")]); setPhase(report, model); renderModel(model); renderEvolution(events); }
+async function refresh() { const [model, events, report, validity] = await Promise.all([request("/api/v1/model"), request("/api/v1/evolution"), request("/api/v1/onboarding"), request("/api/v1/model/validity")]); setPhase(report, model); renderModel(model); renderEvolution(events); renderValidity(validity); }
 q("#onboarding-form").onsubmit = async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const answers = Object.fromEntries(questions.map(([key]) => [key, form.get(key)])); answers.mbti = form.get("mbti") || ""; answers.current_focus = form.get("current_focus") || ""; const feedback = q("#onboarding-feedback"); try { await request("/api/v1/onboarding", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({answers})}); feedback.textContent = "已保存。下一步是审阅候选起点，而不是立刻给你下结论。"; refresh(); } catch (error) { feedback.textContent = error.message; } };
 q("#evolution-check").onclick = async () => { renderEvolution((await request("/api/v1/evolution/review", {method:"POST", headers:{"Content-Type":"application/json"}, body:'{"days":90}'})).events); };
 q("#build-seed").onclick = async () => { const feedback = q("#seed-feedback"); const preview = q("#seed-preview"); try { feedback.textContent = "本地模型正在整理初始自述与近期 Trace…"; const result = await request("/api/v1/model/bootstrap", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); const seed = result.seed; preview.innerHTML = `<div class="seed-preview"><p class="eyebrow">${result.source_count} 条本地 Trace + 初始自述</p><p>${seed.boundary}</p>${seed.dimensions.map((item) => `<article><b>${displayName(item.name)}</b><span>观测强度 ${Math.round(item.value * 100)} · 置信度 ${Math.round(item.confidence * 100)}%</span><small>${item.scope} · ${(item.evidence || []).join("；")}</small></article>`).join("")}<button id="confirm-seed" class="primary">确认这份模型起点 <b>→</b></button></div>`; q("#confirm-seed").onclick = async () => { const confirmed = await request("/api/v1/model/bootstrap/confirm", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({seed})}); feedback.textContent = confirmed.message; preview.innerHTML = ""; refresh(); }; feedback.textContent = "这是候选起点：请先看范围和依据，再决定是否确认。"; } catch (error) { feedback.textContent = error.message; } };
+q("#new-prediction").onclick = () => { const dialog = q("#prediction-dialog"); const due = new Date(); due.setDate(due.getDate() + 30); q("#prediction-due-date").value = due.toISOString().slice(0, 10); q("#prediction-feedback").textContent = ""; dialog.showModal(); };
+q("#prediction-dialog .dialog-close").onclick = () => q("#prediction-dialog").close();
+q("#prediction-form").onsubmit = async (event) => { event.preventDefault(); const feedback = q("#prediction-feedback"); try { await request("/api/v1/predictions", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({statement:q("#prediction-statement").value,scope:q("#prediction-scope").value,probability:Number(q("#prediction-probability").value)/100,due_date:q("#prediction-due-date").value})}); q("#prediction-dialog").close(); event.currentTarget.reset(); await refresh(); } catch (error) { feedback.textContent = error.message; } };
 if (location.protocol === "file:") q("#server-warning").hidden = false;
 renderQuestions(); refresh();

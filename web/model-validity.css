@@ -1,0 +1,44 @@
+.validity-overview,.claims-section,.prediction-section,.intervention-section { max-width:940px; }
+.validity-overview { display:grid; grid-template-columns:minmax(0,1fr) minmax(310px,.9fr); gap:24px; margin:0 0 18px; padding:24px 25px; color:#f5f1e8; background:#202223; border-top:2px solid #c89b52; }
+.validity-overview h2 { margin:8px 0; color:#fff; font-size:27px; letter-spacing:-.055em; }
+.validity-overview > div > p:not(.eyebrow) { max-width:520px; margin:0; color:#cbc8bf; font-size:13px; line-height:1.6; }
+.validity-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; align-content:center; }
+.validity-metric { min-height:82px; padding:13px; background:rgba(255,255,255,.06); border:1px solid rgba(231,216,184,.16); }
+.validity-metric span { display:block; color:#d7ae69; font:700 9px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.09em; }
+.validity-metric b { display:block; margin-top:10px; color:#fff; font-size:16px; letter-spacing:-.035em; }
+.validity-metric small { display:block; margin-top:4px; color:#bdbbb4; font-size:10px; }
+.claims-section { margin-bottom:18px; padding:23px 25px; background:#fff; border:1px solid var(--line); box-shadow:0 12px 30px rgba(31,30,26,.04); }
+.claims-section h2,.prediction-section h2,.intervention-section h2 { margin:7px 0 0; font-size:21px; letter-spacing:-.045em; }
+.claims-section .panel-footer p:not(.eyebrow) { margin:7px 0 0; color:#71726b; font-size:12px; line-height:1.55; }
+.claims-list { display:grid; gap:10px; margin-top:18px; }
+.claim-card { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px 22px; padding:16px; background:#faf9f6; border-left:2px solid #bd9450; }
+.claim-card h3 { margin:0; font-size:14px; font-weight:680; line-height:1.5; }
+.claim-card .claim-scope { margin:5px 0 0; color:#77776f; font-size:11px; line-height:1.5; }
+.claim-confidence { align-self:start; min-width:105px; text-align:right; }
+.claim-confidence b { color:#8a652b; font:700 20px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.claim-confidence span { display:block; margin-top:4px; color:#7d7b73; font-size:10px; }
+.claim-evidence { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px; padding-top:10px; border-top:1px dashed #ddd8cc; }
+.claim-evidence span { padding:4px 6px; color:#6c6557; background:#f0ede6; font-size:10px; }
+.claim-evidence span.counter { color:#824f45; background:#f8ebe8; }
+.resonance { grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:5px; color:#77756e; font-size:11px; }
+.resonance button { width:25px; height:24px; padding:0; color:#745b31; background:#fff; border:1px solid #d6c8a8; cursor:pointer; font:11px inherit; }
+.resonance button.active,.resonance button:hover { color:#fff; background:#967036; border-color:#967036; }
+.validation-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; max-width:940px; margin-bottom:18px; }
+.prediction-section,.intervention-section { padding:22px 24px; background:#f1efe9; border-top:2px solid #b9995f; }
+.intervention-section { background:#fff; border:1px solid var(--line); border-top:2px solid #b9995f; }
+.section-note { min-height:38px; margin:11px 0 16px; color:#74746d; font-size:12px; line-height:1.6; }
+.case-list { display:grid; gap:8px; }
+.case-card { padding:13px; background:#fff; border:1px solid #dfdbd1; }
+.intervention-section .case-card { background:#faf9f6; }
+.case-card b { display:block; color:#343633; font-size:13px; line-height:1.5; }
+.case-card p { margin:6px 0 0; color:#76766f; font-size:11px; line-height:1.55; }
+.case-card .case-status { color:#936c2e; font:700 9px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.09em; }
+.case-card .case-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.case-card button { padding:6px 8px; color:#765a2d; background:transparent; border:1px solid #cfbd96; cursor:pointer; font-size:10px; }
+.case-card button:hover { color:#fff; background:#8a672f; border-color:#8a672f; }
+.prediction-dialog form > label { display:grid; gap:7px; margin-top:19px; color:#55564f; font-size:12px; }
+.prediction-dialog textarea,.prediction-dialog input { width:100%; padding:10px; color:var(--ink); background:#fff; border:1px solid #d7d2c9; font:13px inherit; }
+.prediction-dialog textarea { min-height:92px; resize:vertical; }
+.prediction-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:16px; }
+.prediction-fields label { display:grid; gap:7px; color:#55564f; font-size:12px; }
+@media (max-width:760px) { .validity-overview,.validation-grid { grid-template-columns:1fr; }.validity-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }.claim-card { grid-template-columns:1fr; }.claim-confidence { text-align:left; }.prediction-fields { grid-template-columns:1fr; } }
