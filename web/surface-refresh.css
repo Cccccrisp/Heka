@@ -5,11 +5,11 @@ body.surface-page { background:var(--surface-muted); }
 .surface-page .sidebar { z-index:2; padding:25px 16px 21px; background:#202223; box-shadow:10px 0 28px rgba(20,22,20,.08); }
 .surface-page .brand { width:142px; height:40px; margin-left:6px; }
 .surface-page .brand-subtitle { margin:10px 6px 41px; color:#9e9f99; letter-spacing:.12em; }
-.surface-page .sidebar nav { gap:3px; }
-.surface-page .sidebar nav a { min-height:42px; gap:0; padding:11px 12px; color:#bcbdb6; border:0; border-radius:8px; font-size:13px; }
+.surface-page .sidebar nav { grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; }
+.surface-page .sidebar nav a { min-height:40px; gap:0; padding:8px 9px; color:#9a9b96; border:0; border-radius:8px; font-size:12px; }
 .surface-page .sidebar nav a span { display:none; }
-.surface-page .sidebar nav a:hover { color:#fff; background:#2d3030; }
-.surface-page .sidebar nav a.active { color:#242624; background:#f8f7f4; box-shadow:0 7px 18px rgba(0,0,0,.17); }
+.surface-page .sidebar nav a:hover { color:#f8f7f1; background:rgba(255,255,255,.07); }
+.surface-page .sidebar nav a.active { color:#f4d69e; background:rgba(185,145,81,.15); box-shadow:none; }
 .surface-page .local-mark { margin:0 6px; padding-top:20px; color:#969790; font-size:9px; letter-spacing:.08em; }
 .surface-page .workspace { width:min(1120px,100%); min-height:100vh; padding:25px clamp(28px,5vw,76px) 80px; }
 .surface-page .page-header { min-height:48px; padding-bottom:17px; border-color:var(--rule); }
