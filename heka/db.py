@@ -219,11 +219,23 @@ class HekaStore:
             self.connection.execute("ALTER TABLE conversations ADD COLUMN project_id INTEGER REFERENCES projects(id)")
         action_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(action_cases)")}
         if "helpfulness" not in action_columns:
-            self.connection.execute("ALTER TABLE action_cases ADD COLUMN helpfulness INTEGER CHECK(helpfulness BETWEEN 1 AND 5)")
+            try:
+                self.connection.execute("ALTER TABLE action_cases ADD COLUMN helpfulness INTEGER CHECK(helpfulness BETWEEN 1 AND 5)")
+            except sqlite3.OperationalError as error:
+                if "duplicate column name" not in str(error).lower():
+                    raise
         if "expected_signal" not in action_columns:
-            self.connection.execute("ALTER TABLE action_cases ADD COLUMN expected_signal TEXT NOT NULL DEFAULT ''")
+            try:
+                self.connection.execute("ALTER TABLE action_cases ADD COLUMN expected_signal TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError as error:
+                if "duplicate column name" not in str(error).lower():
+                    raise
         if "follow_up_date" not in action_columns:
-            self.connection.execute("ALTER TABLE action_cases ADD COLUMN follow_up_date TEXT")
+            try:
+                self.connection.execute("ALTER TABLE action_cases ADD COLUMN follow_up_date TEXT")
+            except sqlite3.OperationalError as error:
+                if "duplicate column name" not in str(error).lower():
+                    raise
         self.connection.execute(
             """UPDATE source_documents SET record_kind='research'
                WHERE title LIKE 'Day 3%' OR title LIKE 'Day 4%' OR title LIKE 'Day 5%' OR title LIKE '2026-07-24%'"""
