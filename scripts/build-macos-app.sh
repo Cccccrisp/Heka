@@ -22,20 +22,24 @@ mkdir -p "$LOCAL_DATA"
 if [ -f "$ROOT/heka.db" ] && [ ! -f "$LOCAL_DATA/heka.db" ]; then cp "$ROOT/heka.db" "$LOCAL_DATA/heka.db"; fi
 if [ -f "$ROOT/.env" ] && [ ! -f "$LOCAL_DATA/.env" ]; then cp "$ROOT/.env" "$LOCAL_DATA/.env"; fi
 
-# Quick Look can hang on some macOS releases. A missing custom .icns only
-# affects the Finder icon, never startup, so keep packaging reliable first.
-if [ "${HEKA_BUILD_ICON:-0}" = "1" ]; then
-  mkdir -p "$ICONSET"
-  ICON_RENDER_DIR="$(mktemp -d)"
-  /usr/bin/qlmanage -t -s 1024 -o "$ICON_RENDER_DIR" "$ROOT/desktop/HekaIcon.svg" >/dev/null 2>&1
-  ICON_SOURCE="$ICON_RENDER_DIR/HekaIcon.svg.png"
-  for spec in "16 icon_16x16" "32 icon_16x16@2x" "32 icon_32x32" "64 icon_32x32@2x" "128 icon_128x128" "256 icon_128x128@2x" "256 icon_256x256" "512 icon_256x256@2x" "512 icon_512x512" "1024 icon_512x512@2x"; do
-    set -- $spec
-    /usr/bin/sips -z "$1" "$1" "$ICON_SOURCE" --out "$ICONSET/$2.png" >/dev/null
-  done
-  /usr/bin/iconutil -c icns "$ICONSET" -o "$RESOURCES/Heka.icns"
-  rm -rf "$ICON_RENDER_DIR"
-fi
+mkdir -p "$ICONSET"
+ICON_RENDERER="$ROOT/dist/.render-heka-icon"
+ICON_PACKER="$ROOT/dist/.pack-heka-icon"
+clang -fobjc-arc -framework Cocoa "$ROOT/desktop/IconRenderer.m" -o "$ICON_RENDERER"
+clang -fobjc-arc -framework Foundation "$ROOT/desktop/PackIcon.m" -o "$ICON_PACKER"
+for spec in "16 icon_16x16" "32 icon_16x16@2x" "32 icon_32x32" "64 icon_32x32@2x" "128 icon_128x128" "256 icon_128x128@2x" "256 icon_256x256" "512 icon_256x256@2x" "512 icon_512x512" "1024 icon_512x512@2x"; do
+  set -- $spec
+  "$ICON_RENDERER" "$ICONSET/$2.png" "$1"
+done
+"$ICON_PACKER" "$RESOURCES/Heka.icns" \
+  icp4 "$ICONSET/icon_16x16.png" \
+  icp5 "$ICONSET/icon_32x32.png" \
+  icp6 "$ICONSET/icon_32x32@2x.png" \
+  ic07 "$ICONSET/icon_128x128.png" \
+  ic08 "$ICONSET/icon_256x256.png" \
+  ic09 "$ICONSET/icon_512x512.png" \
+  ic10 "$ICONSET/icon_512x512@2x.png"
+rm -f "$ICON_RENDERER" "$ICON_PACKER"
 
 if clang -fobjc-arc -framework Cocoa -framework WebKit "$ROOT/desktop/HekaApp.m" -o "$CONTENTS/MacOS/Heka"; then
   echo "Built native window launcher."
