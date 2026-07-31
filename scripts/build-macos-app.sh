@@ -37,7 +37,7 @@ if [ "${HEKA_BUILD_ICON:-0}" = "1" ]; then
   rm -rf "$ICON_RENDER_DIR"
 fi
 
-if swiftc -parse-as-library -framework Cocoa -framework WebKit "$ROOT/desktop/HekaApp.swift" -o "$CONTENTS/MacOS/Heka"; then
+if clang -fobjc-arc -framework Cocoa -framework WebKit "$ROOT/desktop/HekaApp.m" -o "$CONTENTS/MacOS/Heka"; then
   echo "Built native window launcher."
 else
   # A local browser launcher keeps Heka usable when Xcode / Command Line Tools
