@@ -14,7 +14,9 @@ body.surface-page { background:var(--surface-muted); }
 .surface-page .rail-rule { height:1px; margin:26px 8px 20px; background:rgba(255,255,255,.12); }
 .surface-page .rail-heading { align-items:center; padding:0 8px; }
 .surface-page .rail-heading h2 { margin:0; color:#fff; font-size:17px; letter-spacing:-.04em; }
-.surface-page .icon-button { width:27px; height:27px; color:#2b2d2e; background:#f3f1ea; border-radius:10px; font-size:19px; transition:transform .15s ease,background .15s ease; }
+.surface-page .icon-button { position:relative; display:grid; place-items:center; width:27px; height:27px; padding:0; color:#2b2d2e; background:#f3f1ea; border:0; border-radius:10px; font-size:0; text-decoration:none; transition:transform .15s ease,background .15s ease; }
+.surface-page .icon-button::before,.surface-page .icon-button::after { position:absolute; width:12px; height:1.5px; content:""; background:currentColor; border-radius:1px; }
+.surface-page .icon-button::after { transform:rotate(90deg); }
 .surface-page .icon-button:hover { background:#f3d797; transform:translateY(-1px); }
 .surface-page .rail-caption { margin:7px 8px 16px; color:#969792; font-size:11px; line-height:1.5; }
 .surface-page .project-list { display:grid; gap:3px; }
@@ -27,11 +29,11 @@ body.surface-page { background:var(--surface-muted); }
 .surface-page .conversation-list-heading { display:flex; align-items:center; justify-content:space-between; margin:29px 8px 7px; }
 .surface-page .conversation-list-heading h3 { margin:0; color:#f0efe8; font-size:12px; font-weight:620; }
 .surface-page .text-control { color:#dfbc79; font-size:11px; text-decoration:none; }
-.surface-page .conversation-list { display:grid; gap:3px; }
-.surface-page .conversation-item { display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; padding:9px; color:#aaa9a3; text-align:left; background:transparent; border:0; border-radius:10px; cursor:pointer; font:inherit; }
+.surface-page .conversation-list { display:grid; gap:3px; max-height:119px; overflow:hidden; }
+.surface-page .conversation-item { display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; min-width:0; max-width:100%; padding:9px; color:#aaa9a3; overflow:hidden; text-align:left; background:transparent; border:0; border-radius:10px; cursor:pointer; font:inherit; }
 .surface-page .conversation-item:hover,.surface-page .conversation-item.active { color:#fff; background:rgba(255,255,255,.07); }
-.surface-page .conversation-item b { display:block; overflow:hidden; font-size:12px; font-weight:640; text-overflow:ellipsis; white-space:nowrap; }
-.surface-page .conversation-item small { flex:0 0 auto; color:#81827d; font-size:10px; }
+.surface-page .conversation-item b { display:block; min-width:0; overflow:hidden; font-size:12px; font-weight:640; text-overflow:ellipsis; white-space:nowrap; }
+.surface-page .conversation-item small { display:none; }
 .surface-page .empty-list { margin:7px 8px; color:#878883; font-size:11px; line-height:1.6; }
 .surface-page .sidebar { z-index:2; padding:25px 16px 21px; background:#202223; box-shadow:10px 0 28px rgba(20,22,20,.08); }
 .surface-page .brand { width:142px; height:40px; margin-left:6px; }

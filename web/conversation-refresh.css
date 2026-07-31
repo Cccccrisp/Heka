@@ -5,7 +5,7 @@
 .conversation-page .sidebar { display:none; }
 .conversation-page .conversation-workspace { width:100%; padding:0; }
 .conversation-page .conversation-layout { grid-template-columns:246px minmax(460px,1fr) 276px; height:100dvh; min-height:0; overflow:hidden; border:0; background:var(--heka-panel); box-shadow:none; }
-.conversation-page .project-rail { padding:23px 15px 17px; color:#ecece6; background:var(--heka-graphite); border:0; overflow:auto; }
+.conversation-page .project-rail { padding:23px 15px 17px; color:#ecece6; background:var(--heka-graphite); border:0; overflow:hidden; }
 .workspace-brand { display:block; width:132px; height:38px; margin:0 8px; overflow:visible; }
 .workspace-brand img { display:block; width:100%; height:100%; object-fit:contain; object-position:left center; filter:brightness(0) invert(1); }
 .workspace-brand::after { content:"PERSONAL INTELLIGENCE LOOP"; display:block; margin-top:16px; color:#a9aaa5; font-size:9px; font-weight:700; letter-spacing:.13em; white-space:nowrap; }
@@ -16,7 +16,9 @@
 .rail-rule { height:1px; margin:26px 8px 20px; background:rgba(255,255,255,.12); }
 .conversation-page .rail-heading { align-items:center; padding:0 8px; }
 .conversation-page .rail-heading h2 { margin:0; color:#fff; font-size:17px; letter-spacing:-.04em; }
-.conversation-page .icon-button { width:27px; height:27px; color:#2b2d2e; background:#f3f1ea; border-radius:var(--heka-radius); font-size:19px; transition:transform 150ms ease,background 150ms ease; }
+.conversation-page .icon-button { position:relative; display:grid; place-items:center; width:27px; height:27px; padding:0; color:#2b2d2e; background:#f3f1ea; border:0; border-radius:var(--heka-radius); font-size:0; text-decoration:none; transition:transform 150ms ease,background 150ms ease; }
+.conversation-page .icon-button::before,.conversation-page .icon-button::after { position:absolute; width:12px; height:1.5px; content:""; background:currentColor; border-radius:1px; }
+.conversation-page .icon-button::after { transform:rotate(90deg); }
 .conversation-page .icon-button:hover { background:#f3d797; transform:translateY(-1px); }
 .conversation-page .rail-caption { margin:7px 8px 16px; color:#969792; font-size:11px; line-height:1.5; }
 .conversation-page .project-list { gap:3px; }
@@ -29,10 +31,11 @@
 .conversation-page .conversation-list-heading { margin:29px 8px 7px; }
 .conversation-page .conversation-list-heading h3 { margin:0; color:#f0efe8; font-size:12px; font-weight:620; }
 .conversation-page .text-control { color:#dfbc79; font-size:11px; }
-.conversation-page .conversation-list { gap:3px; max-height:none; }
-.conversation-page .conversation-item { padding:9px; color:#aaa9a3; border-radius:var(--heka-radius); transition:color 150ms ease,background 150ms ease; }
+.conversation-page .conversation-list { gap:3px; max-height:119px; overflow:hidden; }
+.conversation-page .conversation-item { min-width:0; max-width:100%; padding:9px; color:#aaa9a3; overflow:hidden; border-radius:var(--heka-radius); transition:color 150ms ease,background 150ms ease; }
+.conversation-page .conversation-item b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .conversation-page .conversation-item:hover,.conversation-page .conversation-item.active { color:#fff; background:rgba(255,255,255,.07); }
-.conversation-page .conversation-item small { color:#81827d; }
+.conversation-page .conversation-item small { display:none; }
 .conversation-page .empty-list { color:#878883; }
 .conversation-page .conversation-main { min-height:0; background:#fafaf8; overflow:hidden; }
 .conversation-page .conversation-title { align-items:center; padding:29px 38px 24px; border-bottom:1px solid var(--heka-line); }
